@@ -69,7 +69,7 @@ async function menu(sock, chatId, text, key, messageEvent) {
 ╭─「 📡 *UTILITY* 」
 │ ➤ .cekkuota <nomor>
 │ ➤ .ping
-│ ➤ .menu
+│ ➤ .speed
 ╰──────────────────
 
 ╭─「 👑 *OWNER MENU* 」
