@@ -1,5 +1,5 @@
 /*
-⚠️ CODE UTAMA RESBOT JPM V3 (FIXED IMPORT BAILEYS)
+⚠️ CODE UTAMA RESBOT JPM V3
 */
 console.log('Start App ..');
 
@@ -9,27 +9,22 @@ import { fileURLToPath } from "url";
 import P from "pino";
 import clc from "cli-color";
 
-// --- IMPORT BAILEYS (SAFE MODE) ---
+// IMPORT BAILEYS SAFE MODE
 import * as baileys from "baileys";
-// Ambil makeWASocket dari default atau langsung dari module
 const makeWASocket = baileys.default?.default || baileys.default || baileys;
 const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
 
-import { handleCommand, logWithTime, ChangeStatus, getStatus, deleteFolderRecursive } from "./lib/utils.js";
+import { handleCommand, ChangeStatus, getStatus } from "./lib/utils.js";
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
-// Load Plugins Manual (Agar tidak error saat load otomatis)
+// Import Plugin Fitur Baru
 import fileManager from "./plugins/file_manager.js";
 import groupFeatures from "./plugins/group_features.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const basePath = __dirname;
-const status = getStatus(`${basePath}/sessions/`);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const status = getStatus(`${__dirname}/sessions/`);
 
-// --- MEMORY ---
 const antiLinkData = {}; 
-let scheduleInterval;
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState("sessions");
@@ -38,31 +33,26 @@ async function connectToWhatsApp() {
     const sock = makeWASocket({
         version,
         auth: state,
-        // printQRInTerminal: true, // Deprecated, kita matikan biar gak warning
         logger: P({ level: "silent" }),
+        // Hapus printQRInTerminal karena deprecated, kita handle di bawah
     });
 
-    // Handle QR Manual jika printQRInTerminal deprecated
     sock.ev.on("connection.update", (update) => {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
-             // Jika library qrcode-terminal terinstall, bisa dipakai. 
-             // Jika tidak, QR string akan muncul di log (biasanya butuh qrcode-terminal untuk render)
-             import('qrcode-terminal').then((qrcode) => {
-                 qrcode.generate(qr, { small: true });
-             }).catch(() => console.log("Scan QR Code diatas:", qr));
+             console.log(clc.yellow("Scan QR Code dibawah ini:"));
+             import('qrcode-terminal').then(m => m.generate(qr, { small: true }));
         }
 
         if (connection === "close") {
-            clearInterval(scheduleInterval); 
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === "open") {
             console.log(clc.green("✅ Terhubung!"));
-            ChangeStatus(`${basePath}/sessions/`, "connected");
+            ChangeStatus(`${__dirname}/sessions/`, "connected");
             resumeAutoJPM(sock);
-            startGroupScheduler(sock); 
+            startScheduler(sock);
         }
     });
 
@@ -74,77 +64,70 @@ async function connectToWhatsApp() {
     sock.ev.on("creds.update", saveCreds);
 }
 
-function startGroupScheduler(sock) {
-    scheduleInterval = setInterval(async () => {
+function startScheduler(sock) {
+    setInterval(() => {
         const now = new Date();
-        const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const time = `${String(now.getHours()).padStart(2,0)}:${String(now.getMinutes()).padStart(2,0)}`;
+        const dbPath = './DATABASE/group_schedule.json';
+        if (!fs.existsSync(dbPath)) return;
         
-        if (!fs.existsSync('./DATABASE/group_schedule.json')) return;
         try {
-            const db = JSON.parse(fs.readFileSync('./DATABASE/group_schedule.json'));
-            for (const [groupId, times] of Object.entries(db)) {
-                if (times.open === currentTime) {
-                    await sock.groupSettingUpdate(groupId, "not_announcement");
-                    await sock.sendMessage(groupId, { text: "⏰ Waktunya grup dibuka secara otomatis." });
+            const db = JSON.parse(fs.readFileSync(dbPath));
+            Object.entries(db).forEach(async ([id, t]) => {
+                if (t.open === time) {
+                    await sock.groupSettingUpdate(id, "not_announcement");
+                    await sock.sendMessage(id, { text: "⏰ Grup dibuka otomatis." });
                 }
-                if (times.close === currentTime) {
-                    await sock.groupSettingUpdate(groupId, "announcement");
-                    await sock.sendMessage(groupId, { text: "⏰ Waktunya grup ditutup secara otomatis." });
+                if (t.close === time) {
+                    await sock.groupSettingUpdate(id, "announcement");
+                    await sock.sendMessage(id, { text: "⏰ Grup ditutup otomatis." });
                 }
-            }
-        } catch (e) {
-            console.error("Error scheduler:", e);
-        }
-    }, 60000); 
+            });
+        } catch {}
+    }, 60000);
 }
 
 async function handleIncomingMessages(sock, messageEvent) {
     try {
         const msg = messageEvent.messages[0];
-        if (!msg.message) return;
-        if (msg.key.fromMe) return;
+        if (!msg.message || msg.key.fromMe) return;
 
         const isGroup = msg.key.remoteJid.endsWith('@g.us');
         const sender = msg.key.participant || msg.key.remoteJid;
-        const senderNum = sender.split('@')[0];
         const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || "";
         
         // 1. Anti-Link
         if (isGroup && (text.includes("chat.whatsapp.com") || text.includes("http"))) {
-            const key = `${msg.key.remoteJid}-${senderNum}`;
-            if (!antiLinkData[key]) antiLinkData[key] = 0;
-            antiLinkData[key] += 1;
+            const key = `${msg.key.remoteJid}-${sender}`;
+            antiLinkData[key] = (antiLinkData[key] || 0) + 1;
             if (antiLinkData[key] > 2) await sock.sendMessage(msg.key.remoteJid, { delete: msg.key });
         }
 
-        // 2. Fitur File Fuzzy
+        // 2. Fitur File Fuzzy (#nama)
         if (text.startsWith("#") && text.length > 2) {
-            const query = text.substring(1).trim(); 
-            const filesDir = './ADDTIONAL/files';
-            if (fs.existsSync(filesDir)) {
-                const files = fs.readdirSync(filesDir);
-                const matches = files.filter(f => f.toLowerCase().includes(query.toLowerCase()));
-                if (matches.length === 1) {
+            const query = text.substring(1).trim().toLowerCase();
+            const dir = './ADDTIONAL/files';
+            if (fs.existsSync(dir)) {
+                const match = fs.readdirSync(dir).find(f => f.toLowerCase().includes(query));
+                if (match) {
                     await sock.sendMessage(msg.key.remoteJid, { 
-                        document: fs.readFileSync(path.join(filesDir, matches[0])), 
-                        mimetype: 'application/octet-stream',
-                        fileName: matches[0]
+                        document: fs.readFileSync(path.join(dir, match)), 
+                        mimetype: 'application/octet-stream', fileName: match
                     }, { quoted: msg });
-                    return; 
+                    return;
                 }
             }
         }
 
-        // 3. Routing Plugins
-        if (typeof fileManager === 'function') await fileManager(sock, msg.key.remoteJid, text, msg.key, messageEvent);
-        if (typeof groupFeatures === 'function') await groupFeatures(sock, msg.key.remoteJid, text, msg.key, isGroup);
+        // 3. Plugins Baru
+        await fileManager(sock, msg.key.remoteJid, text, msg.key, messageEvent);
+        await groupFeatures(sock, msg.key.remoteJid, text, msg.key, isGroup);
         
-        // 4. Command Handler Utama
+        // 4. Command Handler Lama (dari utils)
+        const senderNum = sender.split('@')[0];
         await handleCommand(sock, msg.key.remoteJid, text, msg.key, senderNum, messageEvent, false);
 
-    } catch (e) {
-        console.error("Error handling message:", e);
-    }
+    } catch (e) { console.error("Msg Error:", e); }
 }
 
 if (status === "connected") connectToWhatsApp();
