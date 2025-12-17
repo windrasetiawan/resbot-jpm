@@ -1,28 +1,25 @@
 import axios from 'axios';
 
 async function cekkuota(sock, chatId, message, key, msg) {
-    // Parsing Command
     const parts = message.trim().split(" ");
     const command = parts[0].toLowerCase();
     const args = parts.slice(1);
 
-    // --- COMMAND: .cekkuota atau .cekxl ---
+    // Filter Command
     if (command === ".cekkuota" || command === ".cekxl") {
         
-        // 1. Validasi Input Nomor
+        // 1. Cek Input Nomor
         if (!args[0]) {
-            return sock.sendMessage(chatId, { 
-                text: "⚠️ Masukkan nomor XL/Axis!\nContoh: *.cekkuota 62878xxxx*" 
-            }, { quoted: msg });
+            return sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor XL/Axis!\nContoh: *.cekkuota 62878xxxx*" }, { quoted: msg });
         }
 
-        // Bersihkan nomor (hanya ambil angka)
-        const msisdn = args[0].replace(/[^0-9]/g, ''); 
+        // 2. Bersihkan Format Nomor (Hanya Angka)
+        const msisdn = args[0].replace(/[^0-9]/g, '');
 
-        // 2. Kirim Pesan Loading
-        await sock.sendMessage(chatId, { text: "⏳ Sedang mengecek kouta..." }, { quoted: msg });
+        // 3. Kirim Pesan Loading
+        await sock.sendMessage(chatId, { text: "⏳ Sedang mengambil data..." }, { quoted: msg });
 
-        // 3. Konfigurasi API Sidompul
+        // 4. Config API
         const config = {
             method: 'get',
             url: `https://apigw.kmsp-store.com/sidompul/v4/cek_kuota`,
@@ -36,33 +33,32 @@ async function cekkuota(sock, chatId, message, key, msg) {
         };
 
         try {
-            // 4. Request ke API
+            // 5. Request Data
             const response = await axios(config);
             const res = response.data;
 
             if (res.status === true) {
-                // 5. Rapikan Hasil (Convert HTML ke Format WA)
-                let rawHasil = res.data.hasil || "Tidak ada info.";
-                
-                let cleanHasil = rawHasil
-                    .replace(/<br\s*\/?>/gi, '\n') // Ganti baris baru HTML jadi Enter
-                    .replace(/<b>/gi, '*')         // Ganti Bold HTML jadi Bintang WA
-                    .replace(/<\/b>/gi, '*')       // Tutup Bold
+                // 6. Rapikan Hasil (HTML -> Text WA)
+                let hasil = res.data.hasil || "Tidak ada info paket.";
+                hasil = hasil
+                    .replace(/<br\s*\/?>/gi, '\n') // Enter
+                    .replace(/<b>/gi, '*')         // Bold
+                    .replace(/<\/b>/gi, '*')       // Bold End
                     .replace(/<[^>]*>?/gm, '');    // Hapus sisa tag HTML
 
-                const replyText = `✅ *DETAIL KUOTA XL/AXIS*\n*Nomor:* ${msisdn}\n\n${cleanHasil}`;
-                
-                return sock.sendMessage(chatId, { text: replyText }, { quoted: msg });
+                await sock.sendMessage(chatId, { 
+                    text: `✅ *DETAIL KUOTA XL/AXIS*\n*Nomor:* ${msisdn}\n\n${hasil}` 
+                }, { quoted: msg });
 
             } else {
-                // Jika API merespon tapi gagal (misal nomor salah)
-                const errMsg = res.data?.keteranganError || res.message || "Gagal mengambil data.";
-                return sock.sendMessage(chatId, { text: `❌ *GAGAL:*\n${errMsg}` }, { quoted: msg });
+                // Error dari API (misal nomor salah)
+                const errorMsg = res.data?.keteranganError || res.message || "Gagal mengambil data.";
+                await sock.sendMessage(chatId, { text: `❌ *GAGAL:*\n${errorMsg}` }, { quoted: msg });
             }
 
-        } catch (error) {
-            console.error("Error Cek Kuota:", error);
-            return sock.sendMessage(chatId, { text: "❌ *ERROR SERVER*\nTerjadi kesalahan koneksi atau server gangguan." }, { quoted: msg });
+        } catch (e) {
+            console.error("Error Cek Kuota:", e);
+            await sock.sendMessage(chatId, { text: "❌ *ERROR SERVER*\nGagal menghubungi server Sidompul." }, { quoted: msg });
         }
     }
 }
