@@ -1,6 +1,5 @@
 /*
-⚠️ CODE UTAMA RESBOT JPM V3 (FINAL UPGRADE)
-Fitur: JPM, Cek Kuota, Delete All HC, Add Owner, Self/Public Mode
+⚠️ CODE UTAMA RESBOT JPM V3
 */
 console.log('Start App ..');
 
@@ -23,45 +22,33 @@ import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 import fileManager from "./plugins/file_manager.js";
 import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
 import admin from "./plugins/admin.js"; 
-import menu from "./plugins/menu.js"; // Import Menu agar sinkron
+import ping from "./plugins/ping.js"; // <--- [BARU] Import Ping
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const status = getStatus(`${__dirname}/sessions/`);
 
 // --- DATABASE SETTINGS ---
 const pathSettings = './DATABASE/settings.json';
-// Update struktur database (tambah field owners)
 if (!fs.existsSync(pathSettings)) {
     if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE'); 
     fs.writeFileSync(pathSettings, JSON.stringify({ 
-        mode: 'public', // Default Public
+        mode: 'public', 
         antilink: [], 
         autojoin: false,
-        owners: [] // Array untuk menyimpan Owner Tambahan
+        owners: []
     }, null, 2));
 }
 
-// Fungsi Baca Database
 const getDbSettings = () => {
-    try {
-        return JSON.parse(fs.readFileSync(pathSettings));
-    } catch {
-        return { mode: 'public', antilink: [], autojoin: false, owners: [] };
-    }
+    try { return JSON.parse(fs.readFileSync(pathSettings)); } 
+    catch { return {}; }
 };
-
-// Fungsi Simpan Database
-const saveDbSettings = (data) => {
-    fs.writeFileSync(pathSettings, JSON.stringify(data, null, 2));
-};
+const saveDbSettings = (data) => fs.writeFileSync(pathSettings, JSON.stringify(data, null, 2));
 
 const question = (text) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     return new Promise((resolve) => {
-        rl.question(text, (answer) => {
-            rl.close();
-            resolve(answer);
-        });
+        rl.question(text, (answer) => { rl.close(); resolve(answer); });
     });
 };
 
@@ -144,155 +131,90 @@ async function handleIncomingMessages(sock, msg) {
 
         const chatId = msg.key.remoteJid;
         const isGroup = chatId.endsWith('@g.us');
-        
-        // Normalize Sender
         let sender = isGroup ? (msg.key.participant || msg.key.remoteJid) : chatId;
         sender = jidNormalizedUser(sender);
         const senderNum = sender.split('@')[0];
-
         const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || "";
         
-        // --- LOGIKA SELF MODE & OWNER ---
+        // --- LOGIKA PERMISSIONS ---
         const dbData = getDbSettings();
-        
-        // Cek apakah user adalah Owner Utama ATAU Owner Tambahan (dari database)
         const isCreator = isOwner(sender) || (dbData.owners && dbData.owners.includes(senderNum));
-
-        // Jika Mode SELF dan bukan Creator, abaikan pesan (Silent)
         if (dbData.mode === 'self' && !isCreator) return;
 
-        // --- COMMANDS HANDLING ---
-
-        // 1. UBAH MODE (SELF/PUBLIC)
-        if (text === '.self') {
-            if (!isCreator) return;
-            dbData.mode = 'self';
-            saveDbSettings(dbData);
-            return sock.sendMessage(chatId, { text: '🔴 *Mode SELF Aktif*\nHanya Owner yang bisa akses bot.' }, { quoted: msg });
+        // --- COMMANDS ---
+        if (text === '.self' && isCreator) {
+            dbData.mode = 'self'; saveDbSettings(dbData);
+            return sock.sendMessage(chatId, { text: '🔴 *Mode SELF Aktif*' }, { quoted: msg });
         }
-        if (text === '.public') {
-            if (!isCreator) return;
-            dbData.mode = 'public';
-            saveDbSettings(dbData);
-            return sock.sendMessage(chatId, { text: '🟢 *Mode PUBLIC Aktif*\nSemua orang bisa akses bot.' }, { quoted: msg });
+        if (text === '.public' && isCreator) {
+            dbData.mode = 'public'; saveDbSettings(dbData);
+            return sock.sendMessage(chatId, { text: '🟢 *Mode PUBLIC Aktif*' }, { quoted: msg });
         }
-
-        // 2. ADD OWNER (Tambah akses Self Mode)
-        if (text.startsWith('.addowner')) {
-            if (!isCreator) return;
-            const args = text.split(' ');
-            let targetNum = args[1] ? args[1].replace(/[^0-9]/g, '') : '';
-            
-            if (!targetNum) return sock.sendMessage(chatId, { text: '⚠️ Masukkan nomor!\nContoh: .addowner 628123456' }, { quoted: msg });
-            
+        if (text.startsWith('.addowner') && isCreator) {
+            const target = text.split(' ')[1]?.replace(/[^0-9]/g, '');
+            if (!target) return sock.sendMessage(chatId, { text: '⚠️ Masukkan nomor.' }, { quoted: msg });
             if (!dbData.owners) dbData.owners = [];
-            if (dbData.owners.includes(targetNum)) {
-                return sock.sendMessage(chatId, { text: '⚠️ Nomor sudah jadi owner.' }, { quoted: msg });
-            }
-
-            dbData.owners.push(targetNum);
-            saveDbSettings(dbData);
-            return sock.sendMessage(chatId, { text: `✅ Berhasil menambah Owner.\nNomor: ${targetNum}\nBisa akses saat Mode Self.` }, { quoted: msg });
+            dbData.owners.push(target); saveDbSettings(dbData);
+            return sock.sendMessage(chatId, { text: `✅ Owner ditambah: ${target}` }, { quoted: msg });
         }
-
-        // 3. DELETE ALL .HC (Hapus semua config)
-        if (text.toLowerCase() === '.delallhc' || text.toLowerCase() === '.deleteallhc') {
-            if (!isCreator) return sock.sendMessage(chatId, { text: '⚠️ Khusus Owner!' }, { quoted: msg });
-            
+        if ((text === '.delallhc' || text === '.deleteallhc') && isCreator) {
             const dir = './ADDTIONAL/files';
             if (fs.existsSync(dir)) {
-                const files = fs.readdirSync(dir);
-                const hcFiles = files.filter(f => f.endsWith('.hc'));
-                
-                if (hcFiles.length === 0) return sock.sendMessage(chatId, { text: '⚠️ Tidak ada file .hc.' }, { quoted: msg });
-
-                hcFiles.forEach(f => fs.unlinkSync(path.join(dir, f)));
-                return sock.sendMessage(chatId, { text: `✅ *SUKSES*\nDihapus: ${hcFiles.length} file .hc` }, { quoted: msg });
+                const files = fs.readdirSync(dir).filter(f => f.endsWith('.hc'));
+                files.forEach(f => fs.unlinkSync(path.join(dir, f)));
+                return sock.sendMessage(chatId, { text: `✅ Dihapus: ${files.length} file .hc` }, { quoted: msg });
             }
         }
 
-        // 4. CEK ANTILINK
-        if (isGroup && text && /chat.whatsapp.com/i.test(text)) {
+        // --- SECURITY ---
+        if (isGroup && /chat.whatsapp.com/i.test(text)) {
             let isAdmin = false;
             try {
-                const groupMetadata = await sock.groupMetadata(chatId);
-                const participant = groupMetadata.participants.find(p => p.id === sender);
-                isAdmin = (participant?.admin === 'admin' || participant?.admin === 'superadmin');
-            } catch (e) {}
-            const isSpam = await checkAntilink(sock, chatId, text, msg, sender, isAdmin);
-            if (isSpam) return; 
+                const meta = await sock.groupMetadata(chatId);
+                const p = meta.participants.find(x => x.id === sender);
+                isAdmin = (p?.admin === 'admin' || p?.admin === 'superadmin');
+            } catch {}
+            if (await checkAntilink(sock, chatId, text, msg, sender, isAdmin)) return;
         }
 
-        // 5. CEK AUTO JOIN
         if (dbData.autojoin && isCreator && text.includes("chat.whatsapp.com")) {
             let code = text.split('chat.whatsapp.com/')[1].split(' ')[0];
-            await sock.groupAcceptInvite(code)
-                .then(() => sock.sendMessage(sender, { text: '✅ Berhasil Join!' }))
-                .catch(() => sock.sendMessage(sender, { text: '❌ Gagal Join.' }));
+            await sock.groupAcceptInvite(code).catch(() => {});
         }
 
-        // 6. FITUR CEK KUOTA (Direct)
+        // --- FEATURES ---
         if (text.startsWith('.cekkuota') || text.startsWith('.cekxl')) {
             const args = text.split(" ").slice(1);
-            if (!args[0]) {
-                 await sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor!\nContoh: .cekkuota 62878xxxx" }, { quoted: msg });
-                 return; 
-            }
+            if (!args[0]) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor." }, { quoted: msg });
             const msisdn = args[0].replace(/[^0-9]/g, '');
-            await sock.sendMessage(chatId, { text: "⏳ Sedang mengambil data..." }, { quoted: msg });
-
+            await sock.sendMessage(chatId, { text: "⏳ Mengambil data..." }, { quoted: msg });
             try {
-                const response = await axios.get(`https://apigw.kmsp-store.com/sidompul/v4/cek_kuota`, {
-                    params: { msisdn: msisdn, isJSON: 'true' },
-                    headers: { 
-                        'Authorization': 'Basic c2lkb21wdWxhcGk6YXBpZ3drbXNw', 
-                        'X-API-Key': '60ef29aa-a648-4668-90ae-20951ef90c55', 
-                        'X-App-Version': '4.0.0', 
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    }, timeout: 20000 
+                const { data } = await axios.get(`https://apigw.kmsp-store.com/sidompul/v4/cek_kuota`, {
+                    params: { msisdn, isJSON: 'true' },
+                    headers: { 'Authorization': 'Basic c2lkb21wdWxhcGk6YXBpZ3drbXNw', 'X-API-Key': '60ef29aa-a648-4668-90ae-20951ef90c55', 'X-App-Version': '4.0.0', 'Content-Type': 'application/x-www-form-urlencoded' }
                 });
-                const res = response.data;
-                if (res.status === true) {
-                    let hasil = res.data.hasil || "Info kosong";
-                    hasil = hasil.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>?/gm, '');
-                    await sock.sendMessage(chatId, { text: `✅ *DETAIL KUOTA XL*\nNomor: ${msisdn}\n\n${hasil}` }, { quoted: msg });
-                } else {
-                    await sock.sendMessage(chatId, { text: `❌ Gagal: ${res.message || "Nomor salah/gangguan"}` }, { quoted: msg });
-                }
-            } catch (e) {
-                console.error("Axios Error:", e.message);
-                await sock.sendMessage(chatId, { text: "❌ Error Server." }, { quoted: msg });
-            }
-            return; 
+                if (data.status) {
+                    let h = (data.data.hasil || "").replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>?/gm, '');
+                    await sock.sendMessage(chatId, { text: `✅ *KUOTA XL ${msisdn}*\n\n${h}` }, { quoted: msg });
+                } else await sock.sendMessage(chatId, { text: "❌ Gagal/Nomor Salah." }, { quoted: msg });
+            } catch { await sock.sendMessage(chatId, { text: "❌ Error Server." }, { quoted: msg }); }
+            return;
         }
 
-        // 7. FITUR # AMBIL FILE (Tanpa Caption)
         if (text.startsWith("#") && text.length > 1) {
-            const query = text.substring(1).trim();
-            const dir = './ADDTIONAL/files'; 
-            if (fs.existsSync(dir)) {
-                const files = fs.readdirSync(dir);
-                let match = files.find(f => f.toLowerCase() === query.toLowerCase());
-                if (!match) match = files.find(f => f.toLowerCase() === query.toLowerCase() + '.hc');
-                if (!match) match = files.find(f => f.toLowerCase().includes(query.toLowerCase()));
-                
-                if (match) {
-                    await sock.sendMessage(chatId, { 
-                        document: fs.readFileSync(path.join(dir, match)), 
-                        mimetype: 'application/octet-stream', 
-                        fileName: match
-                    }, { quoted: msg });
-                    return;
-                }
+            const q = text.substring(1).trim();
+            const d = './ADDTIONAL/files'; 
+            if (fs.existsSync(d)) {
+                const f = fs.readdirSync(d).find(x => x.toLowerCase().includes(q.toLowerCase()));
+                if (f) await sock.sendMessage(chatId, { document: fs.readFileSync(path.join(d, f)), mimetype: 'application/octet-stream', fileName: f }, { quoted: msg });
             }
         }
 
-        // --- PANGGIL PLUGINS LAIN ---
+        // --- PLUGINS ---
+        if (ping) await ping(sock, chatId, text, msg.key, msg); // <--- [BARU] Panggil Ping
         if (fileManager) await fileManager(sock, chatId, text, msg.key, msg);
         if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg);
         if (admin) await admin(sock, chatId, text, msg.key, msg);
-        // Menu dipanggil lewat handleCommand, tapi bisa juga diimport kalau mau custom
-        // Namun standardnya lewat handleCommand di utils.js
 
         await handleCommand(sock, chatId, text, msg.key, senderNum, msg, false);
 
