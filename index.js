@@ -1,5 +1,5 @@
 /*
-⚠️ CODE UTAMA RESBOT JPM V3 (FIXED)
+⚠️ CODE UTAMA RESBOT JPM V3 (FIXED GROUP ARGS)
 */
 console.log('Start App ..');
 
@@ -15,23 +15,28 @@ import * as baileys from "baileys";
 const makeWASocket = baileys.default?.default || baileys.default || baileys;
 const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
 
-// Import isOwner yang sudah diperbaiki
+// Import Helper
 import { handleCommand, ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
 // Load Plugins
 import fileManager from "./plugins/file_manager.js";
 import groupFeatures from "./plugins/group_features.js";
-import hcFeatures from "./plugins/hc_features.js"; // Pastikan file ini sudah dibuat
+import hcFeatures from "./plugins/hc_features.js"; 
+import admin from "./plugins/admin.js"; // Pastikan admin.js ada (opsional)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const status = getStatus(`${__dirname}/sessions/`);
 
-// --- DATABASE SETTINGS ---
+// --- DATABASE SETTINGS (INIT) ---
 const pathSettings = './DATABASE/settings.json';
 if (!fs.existsSync(pathSettings)) {
     if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE'); 
-    fs.writeFileSync(pathSettings, JSON.stringify({ antilink: [], autojoin: false }, null, 2));
+    fs.writeFileSync(pathSettings, JSON.stringify({ 
+        mode: 'self', 
+        antilink: [], 
+        autojoin: false 
+    }, null, 2));
 }
 const getDbSettings = () => JSON.parse(fs.readFileSync(pathSettings));
 
@@ -88,7 +93,8 @@ async function connectToWhatsApp() {
 
     sock.ev.on("messages.upsert", async (m) => {
         if (!m.messages[0]) return;
-        await handleIncomingMessages(sock, m);
+        const msg = m.messages[0]; 
+        await handleIncomingMessages(sock, msg);
     });
     
     sock.ev.on("creds.update", saveCreds);
@@ -116,9 +122,9 @@ function startScheduler(sock) {
     }, 60000);
 }
 
-async function handleIncomingMessages(sock, messageEvent) {
+// FUNGSI UTAMA HANDLER
+async function handleIncomingMessages(sock, msg) {
     try {
-        const msg = messageEvent.messages[0];
         if (!msg.message || msg.key.fromMe) return;
 
         const isGroup = msg.key.remoteJid.endsWith('@g.us');
@@ -134,7 +140,6 @@ async function handleIncomingMessages(sock, messageEvent) {
                 const participants = groupMetadata.participants;
                 const isAdmin = participants.find(p => p.id === sender)?.admin;
                 
-                // Perbaikan: isOwner harus dipanggil sebagai fungsi isOwner(sender)
                 if (!isAdmin && !isOwner(sender)) { 
                     await sock.sendMessage(msg.key.remoteJid, { delete: msg.key });
                     await sock.groupParticipantsUpdate(msg.key.remoteJid, [sender], 'remove');
@@ -143,7 +148,6 @@ async function handleIncomingMessages(sock, messageEvent) {
         }
 
         // 2. CEK AUTO JOIN
-        // Perbaikan: Gunakan fungsi isOwner untuk cek owner
         if (dbData.autojoin && isOwner(sender) && text.includes("chat.whatsapp.com")) {
             let code = text.split('chat.whatsapp.com/')[1].split(' ')[0];
             await sock.groupAcceptInvite(code)
@@ -152,12 +156,17 @@ async function handleIncomingMessages(sock, messageEvent) {
         }
 
         // --- PLUGINS ---
-        if (fileManager) await fileManager(sock, msg.key.remoteJid, text, msg.key, messageEvent);
-        if (groupFeatures) await groupFeatures(sock, msg.key.remoteJid, text, msg.key, isGroup, sender);
-        if (hcFeatures) await hcFeatures(sock, msg.key.remoteJid, text, msg.key, messageEvent);
+        // PENTING: Semua plugin sekarang menerima 5 argumen: (sock, chatId, text, key, msg)
+        if (fileManager) await fileManager(sock, msg.key.remoteJid, text, msg.key, msg);
+        
+        // [FIXED] Panggil groupFeatures dengan 'msg' sebagai argumen ke-5
+        if (groupFeatures) await groupFeatures(sock, msg.key.remoteJid, text, msg.key, msg);
+        
+        if (hcFeatures) await hcFeatures(sock, msg.key.remoteJid, text, msg.key, msg);
+        if (admin) await admin(sock, msg.key.remoteJid, text, msg.key, msg); // Opsional
 
         // Command Handler
-        await handleCommand(sock, msg.key.remoteJid, text, msg.key, senderNum, messageEvent, false);
+        await handleCommand(sock, msg.key.remoteJid, text, msg.key, senderNum, msg, false);
 
     } catch (e) { console.error("Msg Error:", e); }
 }
