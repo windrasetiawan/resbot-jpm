@@ -2,140 +2,79 @@ import fs from "fs";
 import { downloadAndSaveMedia, readWhitelist } from "../lib/utils.js";
 import { saveAutoJPMStatus } from "../lib/autojpmStatus.js";
 
-// Inisialisasi Global Variable agar tidak reset saat file direload
-global.autojpm = global.autojpm || { running: false, delay: 60 }; 
+// Pastikan global variabel terinisialisasi
+global.autojpm = global.autojpm || { loopDelayHours: 1 };
+global.autojpmRunning = false;
 
 async function autojpm(sock, sender, message, key, messageEvent) {
   const parts = message.trim().split(" ");
-  const command = parts[0].toLowerCase();
-  const args = parts.slice(1);
-  const text = args.join(" ");
+  const text = parts.slice(1).join(" ");
 
-  // --- COMMAND: SET WAKTU LOOPING ---
-  if (command === ".autojpmsettime" || command === ".setautojpm") {
-      if (!args[0]) return sock.sendMessage(sender, { text: "⚠️ Masukkan waktu dalam menit.\nContoh: .autojpmsettime 60" });
-      
-      let menit = parseFloat(args[0]);
-      if (isNaN(menit)) return sock.sendMessage(sender, { text: "⚠️ Format waktu salah!" });
-
-      global.autojpm.delay = menit;
-      return sock.sendMessage(sender, { text: `✅ Waktu istirahat (loop) diatur ke: ${menit} menit.` });
+  // --- COMMAND: SET WAKTU ---
+  if (parts[0] === ".autojpmsettime") {
+      global.autojpm.loopDelayHours = parseFloat(parts[1]) || 1;
+      return sock.sendMessage(sender, { text: `✅ Jeda loop: ${global.autojpm.loopDelayHours} jam` });
   }
 
-  // --- COMMAND: AUTO JPM ---
-  if (command === ".autojpm") {
-      // Fitur STOP
-      if (text.toLowerCase() === "stop" || text.toLowerCase() === "off") {
-          global.autojpm.running = false;
+  // --- COMMAND: AUTOJPM ---
+  if (parts[0] === ".autojpm") {
+      // STOP
+      if (text === "stop") {
+          global.autojpmRunning = false;
           saveAutoJPMStatus(false);
-          return sock.sendMessage(sender, { text: "🛑 Auto JPM Diberhentikan." });
+          return sock.sendMessage(sender, { text: "🛑 Berhenti." });
       }
 
-      // Cek apakah sudah berjalan
-      if (global.autojpm.running) {
-          return sock.sendMessage(sender, { text: "⚠️ Auto JPM sedang berjalan! Ketik *.autojpm stop* untuk berhenti." });
-      }
-
-      global.autojpm.running = true;
+      global.autojpmRunning = true;
       let imgPath = null;
-      let msgToSend = {};
+      
+      // [PERBAIKAN DISINI]
+      // messageEvent sudah berupa object message, jadi langsung pakai saja.
+      const msg = messageEvent; 
 
-      // --- LOGIKA DOWNLOAD GAMBAR (FIXED) ---
-      // Membuat objek pesan palsu agar fungsi download di utils.js bisa membacanya
+      // Cek Gambar (Langsung atau Quoted)
       let msgToDownload = null;
-
-      // 1. Cek apakah pesan utama adalah gambar
-      if (messageEvent.message?.imageMessage) {
-          msgToDownload = messageEvent;
-      } 
-      // 2. Cek apakah ini reply gambar (Quoted)
-      else if (messageEvent.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage) {
-          msgToDownload = {
-              message: messageEvent.message.extendedTextMessage.contextInfo.quotedMessage
-          };
+      if (msg.message?.imageMessage) {
+          msgToDownload = msg;
+      } else if (msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage) {
+          msgToDownload = { message: msg.message.extendedTextMessage.contextInfo.quotedMessage };
       }
 
-      // Lakukan Download jika ada gambar
+      // Download jika ada gambar
       if (msgToDownload) {
-          // Simpan sebagai jpm.jpg di folder tmp
-          let success = await downloadAndSaveMedia(sock, msgToDownload, "jpm.jpg", "../tmp");
-          if (success) {
-              imgPath = "./tmp/jpm.jpg"; 
-          } else {
-              return sock.sendMessage(sender, { text: "❌ Gagal mendownload gambar." });
+          if (await downloadAndSaveMedia(sock, msgToDownload, "jpm.jpg", "../tmp")) {
+              imgPath = "./tmp/jpm.jpg";
           }
       }
-
-      // Cek Link Grup untuk Preview (Ad-Reply)
-      const linkRegex = /chat.whatsapp.com\/([0-9A-Za-z]{20,24})/i;
-      const linkMatch = text.match(linkRegex);
 
       saveAutoJPMStatus(true, text, imgPath);
-      await sock.sendMessage(sender, { text: `🚀 JPM Dimulai...\n⏱️ Delay Loop: ${global.autojpm.delay} menit\n🎯 Target: Semua Grup` });
+      await sock.sendMessage(sender, { text: `🚀 JPM Dimulai...\nJeda Loop: ${global.autojpm.loopDelayHours} jam` });
 
-      // --- LOOPING UTAMA ---
-      while (global.autojpm.running) {
-          // Ambil daftar grup terbaru setiap putaran
+      // LOOPING
+      while (global.autojpmRunning) {
           const groups = await sock.groupFetchAllParticipating();
-          const whitelist = readWhitelist(); 
+          const whitelist = readWhitelist();
           const targets = Object.values(groups).filter(g => !whitelist.includes(g.id));
 
-          let successCount = 0;
-
           for (const g of targets) {
-              if (!global.autojpm.running) break;
-
-              // KONSTRUKSI PESAN
-              if (imgPath && fs.existsSync(imgPath)) {
-                  // --- OPSI A: GAMBAR + TEXT ---
-                  msgToSend = { 
-                      image: fs.readFileSync(imgPath), 
-                      caption: text 
-                  };
-              } else {
-                  // --- OPSI B: TEXT SAJA / LINK PREVIEW ---
-                  if (linkMatch) {
-                      let groupLink = linkMatch[0];
-                      msgToSend = {
-                          text: text,
-                          contextInfo: {
-                              externalAdReply: {
-                                  title: "KLIK DISINI UNTUK GABUNG",
-                                  body: "Undangan Grup WhatsApp",
-                                  thumbnailUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/1200px-WhatsApp.svg.png",
-                                  sourceUrl: groupLink,
-                                  mediaType: 1,
-                                  renderLargerThumbnail: true
-                              }
-                          }
-                      };
-                  } else {
-                      msgToSend = { text: text };
-                  }
-              }
-
+              if (!global.autojpmRunning) break;
               try {
-                  await sock.sendMessage(g.id, msgToSend);
-                  successCount++;
-                  // Delay acak 3-7 detik per grup (Anti-Ban)
-                  const delayPerGrup = Math.floor(Math.random() * 4000) + 3000; 
-                  await new Promise(r => setTimeout(r, delayPerGrup));
-              } catch (e) {
-                  // Silent fail jika gagal kirim ke satu grup
-              }
+                  if (imgPath && fs.existsSync(imgPath)) {
+                      await sock.sendMessage(g.id, { image: fs.readFileSync(imgPath), caption: text });
+                  } else {
+                      await sock.sendMessage(g.id, { text: text });
+                  }
+              } catch {}
+              // Jeda antar grup 5 detik
+              await new Promise(r => setTimeout(r, 5000));
           }
           
-          if (!global.autojpm.running) break;
-
-          // LAPORAN & ISTIRAHAT
-          await sock.sendMessage(sender, { 
-              text: `✅ *Selesai 1 Putaran*\n📨 Terkirim: ${successCount} Grup\n😴 Istirahat: ${global.autojpm.delay} Menit` 
-          });
-
-          // Jeda Loop (Menit -> Milidetik)
-          await new Promise(r => setTimeout(r, global.autojpm.delay * 60 * 1000));
+          if (!global.autojpmRunning) break;
+          
+          // Laporan Selesai & Istirahat
+          await sock.sendMessage(sender, { text: `✅ Selesai 1 putaran. Istirahat ${global.autojpm.loopDelayHours} jam.` });
+          await new Promise(r => setTimeout(r, global.autojpm.loopDelayHours * 3600000));
       }
   }
 }
-
 export default autojpm;
