@@ -2,8 +2,8 @@ import fs from "fs";
 import { downloadAndSaveMedia, readWhitelist } from "../lib/utils.js";
 import { saveAutoJPMStatus } from "../lib/autojpmStatus.js";
 
-// Global Variable untuk menyimpan settingan (Default 60 menit)
-global.autojpm = global.autojpm || { delayMinutes: 60 };
+// Global Variable (Default 60 menit)
+global.autojpm = global.autojpm || { delay: 60 };
 global.autojpmRunning = false;
 
 async function autojpm(sock, sender, message, key, messageEvent) {
@@ -12,12 +12,14 @@ async function autojpm(sock, sender, message, key, messageEvent) {
   const args = parts.slice(1);
   const text = args.join(" ");
 
-  // --- 1. SETTING WAKTU ISTIRAHAT (LOOP) ---
+  // --- 1. SETTING WAKTU ISTIRAHAT (FIXED) ---
   if (command === ".autojpmsettime" || command === ".setautojpm") {
-      const menit = parseFloat(args[0]);
-      if (isNaN(menit)) return sock.sendMessage(sender, { text: "⚠️ Masukkan angka menit!\nContoh: *.autojpmsettime 60*" });
+      if (!args[0]) return sock.sendMessage(sender, { text: "⚠️ Masukkan angka menit!\nContoh: *.autojpmsettime 60*" });
       
-      global.autojpm.delayMinutes = menit;
+      const menit = parseFloat(args[0]);
+      if (isNaN(menit)) return sock.sendMessage(sender, { text: "⚠️ Format salah. Harus angka." });
+
+      global.autojpm.delay = menit;
       return sock.sendMessage(sender, { text: `✅ Waktu istirahat diatur menjadi: *${menit} menit*.` });
   }
 
@@ -39,11 +41,10 @@ async function autojpm(sock, sender, message, key, messageEvent) {
       let imgPath = null;
       let msgToSend = {};
 
-      // [FIX CRASH] Ambil objek pesan dengan benar
+      // Ambil Pesan (Anti Crash)
       const msg = messageEvent; 
 
       // --- A. LOGIKA DOWNLOAD GAMBAR ---
-      // Cek apakah pesan mengandung gambar (langsung atau reply)
       let msgToDownload = null;
       if (msg.message?.imageMessage) {
           msgToDownload = msg;
@@ -52,7 +53,6 @@ async function autojpm(sock, sender, message, key, messageEvent) {
       }
 
       if (msgToDownload) {
-          // Download gambar ke folder tmp
           if (await downloadAndSaveMedia(sock, msgToDownload, "jpm.jpg", "../tmp")) {
               imgPath = "./tmp/jpm.jpg";
           } else {
@@ -60,12 +60,13 @@ async function autojpm(sock, sender, message, key, messageEvent) {
           }
       }
 
-      // --- B. DETEKSI LINK (UNTUK PREVIEW) ---
+      // --- B. DETEKSI LINK UNTUK PREVIEW (FIXED) ---
+      // Mencari link grup WA pertama untuk dijadikan tombol
       const linkRegex = /chat.whatsapp.com\/([0-9A-Za-z]{20,24})/i;
       const linkMatch = text.match(linkRegex);
 
       saveAutoJPMStatus(true, text, imgPath);
-      await sock.sendMessage(sender, { text: `🚀 *JPM DIMULAI*\n\n⏱️ Istirahat: ${global.autojpm.delayMinutes} menit\n🎯 Target: Semua Grup` });
+      await sock.sendMessage(sender, { text: `🚀 *JPM DIMULAI*\n\n⏱️ Istirahat: ${global.autojpm.delay} menit\n🎯 Target: Semua Grup` });
 
       // --- C. LOOPING PENYEBARAN ---
       while (global.autojpmRunning) {
@@ -78,52 +79,51 @@ async function autojpm(sock, sender, message, key, messageEvent) {
           for (const g of targets) {
               if (!global.autojpmRunning) break;
 
-              // MENYUSUN PESAN
+              // --- LOGIKA PEMBUATAN PESAN ---
               if (imgPath && fs.existsSync(imgPath)) {
-                  // Opsi 1: Gambar + Caption
+                  // KASUS 1: GAMBAR + CAPTION
                   msgToSend = { image: fs.readFileSync(imgPath), caption: text };
               } else {
-                  // Opsi 2: Teks (Cek apakah pakai Link Preview)
+                  // KASUS 2: TEXT SAJA (Cek Preview)
                   if (linkMatch) {
+                      // Ada Link Grup -> Buat AdReply (Kartu)
                       msgToSend = {
                           text: text,
                           contextInfo: {
                               externalAdReply: {
-                                  title: "KLIK UNTUK GABUNG",
-                                  body: "Undangan Grup WhatsApp",
-                                  thumbnailUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/1200px-WhatsApp.svg.png", // Logo WA Standar
-                                  sourceUrl: linkMatch[0], // Link grup yang ditemukan
+                                  title: "GABUNG GRUP SEKARANG", // Judul besar
+                                  body: "Klik di sini untuk bergabung", // Tulisan kecil
+                                  thumbnailUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/1200px-WhatsApp.svg.png", // Logo WA
+                                  sourceUrl: linkMatch[0], // Link grup yang terdeteksi
                                   mediaType: 1,
                                   renderLargerThumbnail: true
                               }
                           }
                       };
                   } else {
-                      // Opsi 3: Teks Biasa
+                      // Tidak Ada Link -> Text Biasa
                       msgToSend = { text: text };
                   }
               }
 
-              // EKSEKUSI KIRIM
+              // KIRIM PESAN
               try {
                   await sock.sendMessage(g.id, msgToSend);
                   successCount++;
-                  // Delay aman 5 detik per grup
-                  await new Promise(r => setTimeout(r, 5000));
-              } catch (e) {
-                  // Abaikan error (misal bot dikeluarkan)
-              }
+                  // Delay aman 3-6 detik per grup
+                  await new Promise(r => setTimeout(r, Math.floor(Math.random() * 3000) + 3000));
+              } catch (e) {}
           }
           
           if (!global.autojpmRunning) break;
 
           // LAPORAN & ISTIRAHAT
           await sock.sendMessage(sender, { 
-              text: `✅ *Selesai 1 Putaran*\n📨 Terkirim: ${successCount} Grup\n😴 Istirahat: ${global.autojpm.delayMinutes} Menit` 
+              text: `✅ *Selesai 1 Putaran*\n📨 Terkirim: ${successCount} Grup\n😴 Istirahat: ${global.autojpm.delay} Menit` 
           });
 
           // Timer Istirahat (Menit -> Milidetik)
-          await new Promise(r => setTimeout(r, global.autojpm.delayMinutes * 60 * 1000));
+          await new Promise(r => setTimeout(r, global.autojpm.delay * 60 * 1000));
       }
   }
 }
