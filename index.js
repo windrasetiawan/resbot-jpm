@@ -1,5 +1,5 @@
 /*
-⚠️ CODE UTAMA RESBOT JPM V3 (FIXED QR & PLUGINS)
+⚠️ CODE UTAMA RESBOT JPM V3 (PAIRING ONLY)
 */
 console.log('Start App ..');
 
@@ -8,6 +8,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import P from "pino";
 import clc from "cli-color";
+import readline from "readline";
 
 // IMPORT BAILEYS
 import * as baileys from "baileys";
@@ -17,7 +18,7 @@ const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = b
 import { handleCommand, ChangeStatus, getStatus } from "./lib/utils.js";
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
-// Load Plugins Manual (Untuk memastikan urutan)
+// Load Plugins
 import fileManager from "./plugins/file_manager.js";
 import groupFeatures from "./plugins/group_features.js";
 
@@ -25,6 +26,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const status = getStatus(`${__dirname}/sessions/`);
 
 const antiLinkData = {}; 
+
+// Fungsi Input Console
+const question = (text) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    return new Promise((resolve) => {
+        rl.question(text, (answer) => {
+            rl.close();
+            resolve(answer);
+        });
+    });
+};
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState("sessions");
@@ -34,23 +46,40 @@ async function connectToWhatsApp() {
         version,
         auth: state,
         logger: P({ level: "silent" }),
+        printQRInTerminal: false, // Matikan QR
+        browser: ["Ubuntu", "Chrome", "20.0.04"] // Browser info agar pairing work
     });
 
-    sock.ev.on("connection.update", (update) => {
-        const { connection, lastDisconnect, qr } = update;
+    // --- LOGIKA PAIRING CODE ---
+    if (!sock.authState.creds.registered) {
+        console.log(clc.cyan.bold("\n🤖 Mode Pairing Code Aktif!"));
+        console.log(clc.white("Silakan tunggu sebentar...\n"));
         
-        if (qr) {
-             console.log(clc.yellow("Scan QR Code dibawah ini:"));
-             // FIX ERROR m.generate is not a function: Gunakan m.default.generate
-             import('qrcode-terminal').then(m => {
-                 const generate = m.default?.generate || m.generate;
-                 if (generate) generate(qr, { small: true });
-                 else console.log("QR Code:", qr);
-             }).catch(e => console.log("Gagal load qrcode-terminal", e));
-        }
+        // Delay sedikit agar socket siap
+        setTimeout(async () => {
+            const phoneNumber = await question(clc.yellow("Masukkan Nomor WhatsApp Anda (contoh: 628123456xxx): "));
+            if (phoneNumber) {
+                try {
+                    // Request Code
+                    const code = await sock.requestPairingCode(phoneNumber.trim());
+                    console.log(clc.green.bold("\n=============================="));
+                    console.log(clc.green.bold("🔗 KODE PAIRING ANDA:"));
+                    console.log(clc.white.bold(code?.match(/.{1,4}/g)?.join("-") || code));
+                    console.log(clc.green.bold("==============================\n"));
+                    console.log(clc.cyan("Silakan masukkan kode di atas ke WhatsApp > Perangkat Tertaut > Tautkan Perangkat > Masuk dengan Nomor Telepon."));
+                } catch (e) {
+                    console.error(clc.red("Gagal request pairing code. Pastikan nomor benar."), e);
+                }
+            }
+        }, 3000);
+    }
+
+    sock.ev.on("connection.update", (update) => {
+        const { connection, lastDisconnect } = update;
 
         if (connection === "close") {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log(clc.red("Koneksi terputus, mencoba menghubungkan ulang..."));
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === "open") {
             console.log(clc.green("✅ Terhubung!"));
