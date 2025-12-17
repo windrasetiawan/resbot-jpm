@@ -1,5 +1,5 @@
 /*
-⚠️ CODE UTAMA RESBOT JPM V3 (FIXED FUZZY #)
+⚠️ CODE UTAMA RESBOT JPM V3 (FULL FEATURE)
 */
 console.log('Start App ..');
 
@@ -19,16 +19,19 @@ const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = b
 import { handleCommand, ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
-// Load Plugins
+// --- LOAD PLUGINS ---
 import fileManager from "./plugins/file_manager.js";
-// [UPDATE] Import checkAntilink bersamaan dengan default export groupFeatures
+// Fitur Grup (Antilink)
 import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
+// Fitur Admin
 import admin from "./plugins/admin.js"; 
+// [BARU] Fitur Cek Kuota
+import cekkuota from "./plugins/cekkuota.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const status = getStatus(`${__dirname}/sessions/`);
 
-// --- DATABASE SETTINGS (INIT) ---
+// --- DATABASE SETTINGS ---
 const pathSettings = './DATABASE/settings.json';
 if (!fs.existsSync(pathSettings)) {
     if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE'); 
@@ -60,7 +63,8 @@ async function connectToWhatsApp() {
         logger: P({ level: "silent" }),
         printQRInTerminal: false,
         browser: ["Ubuntu", "Chrome", "20.0.04"],
-        generateHighQualityLinkPreview: true
+        // [PENTING] Aktifkan ini agar preview link JPM muncul
+        generateHighQualityLinkPreview: true 
     });
 
     if (!sock.authState.creds.registered) {
@@ -134,29 +138,20 @@ async function handleIncomingMessages(sock, msg) {
         const senderNum = sender.split('@')[0];
         const dbData = getDbSettings();
 
-        // ==========================================
-        // [UPDATE] 1. CEK ANTILINK (NEW LOGIC)
-        // ==========================================
-        // Hanya cek jika di grup dan ada text mengandung "chat.whatsapp.com"
+        // 1. CEK ANTILINK (Logic Baru: 3x Warning)
         if (isGroup && text && /chat.whatsapp.com/i.test(text)) {
-            // Cek status Admin (hanya jika ada link, biar hemat resource)
             let isAdmin = false;
             try {
                 const groupMetadata = await sock.groupMetadata(chatId);
                 const participant = groupMetadata.participants.find(p => p.id === sender);
-                // Cek apakah admin atau superadmin
                 isAdmin = (participant?.admin === 'admin' || participant?.admin === 'superadmin');
             } catch (e) {}
 
-            // Panggil Fungsi checkAntilink dari group_features.js
-            // Jika return TRUE, berarti pesan dihapus (Limit Habis), jadi stop proses
             const isSpam = await checkAntilink(sock, chatId, text, msg, sender, isAdmin);
             if (isSpam) return; 
         }
 
-        // ==========================================
-        // 2. CEK AUTO JOIN (TETAP ADA)
-        // ==========================================
+        // 2. CEK AUTO JOIN
         if (dbData.autojoin && isOwner(sender) && text.includes("chat.whatsapp.com")) {
             let code = text.split('chat.whatsapp.com/')[1].split(' ')[0];
             await sock.groupAcceptInvite(code)
@@ -164,11 +159,9 @@ async function handleIncomingMessages(sock, msg) {
                 .catch(() => sock.sendMessage(sender, { text: '❌ Gagal Join.' }));
         }
 
-        // ==========================================
-        // 3. FITUR AMBIL FILE VIA # (TETAP ADA)
-        // ==========================================
+        // 3. FITUR AMBIL FILE VIA #
         if (text.startsWith("#") && text.length > 1) {
-            const query = text.substring(1).trim(); 
+            const query = text.substring(1).trim();
             const dir = './ADDTIONAL/files'; 
             
             if (fs.existsSync(dir)) {
@@ -184,17 +177,19 @@ async function handleIncomingMessages(sock, msg) {
                         fileName: match,
                         caption: `✅ File Ditemukan: ${match}`
                     }, { quoted: msg });
-                    return; 
+                    return;
                 }
             }
         }
 
-        // --- PLUGINS ---
+        // --- LOAD SEMUA PLUGINS ---
         if (fileManager) await fileManager(sock, chatId, text, msg.key, msg);
         if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg);
         if (admin) await admin(sock, chatId, text, msg.key, msg);
+        // [BARU] Panggil Plugin Cek Kuota
+        if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg);
 
-        // Command Handler
+        // Command Handler Utama
         await handleCommand(sock, chatId, text, msg.key, senderNum, msg, false);
 
     } catch (e) { console.error("Msg Error:", e); }
