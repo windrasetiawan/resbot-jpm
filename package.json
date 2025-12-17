@@ -1,25 +1,24 @@
 {
-  "name": "script-jpm",
-  "version": "1.4",
-  "description": "script jpm",
+  "name": "resbot-jpm",
+  "version": "2.0.0",
+  "description": "WhatsApp Bot Auto JPM",
   "main": "index.js",
+  "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
   "keywords": [
-    "script",
-    "jpm"
+    "whatsapp",
+    "bot",
+    "baileys"
   ],
-  "author": "azhari creative",
+  "author": "Azhari Creative",
   "license": "ISC",
   "dependencies": {
     "@hapi/boom": "^10.0.1",
-    "baileys": "^6.7.18",
-    "cli-color": "^2.0.4",
-    "mime-types": "^2.1.35",
-    "pino": "^9.3.2",
-    "qrcode": "^1.5.4",
+    "baileys": "^6.7.9",
+    "cli-color": "^2.0.3",
+    "pino": "^8.19.0",
     "qrcode-terminal": "^0.12.0"
   }
 }
