@@ -58,7 +58,7 @@ async function menu(sock, chatId, text, key, messageEvent) {
 ╰──────────────────
 
 ╭─「 📡 *TOOLS & UTILITY* 」
-│ ➤ .cekkuota <nomor>
+│ ➤ .cekxl <nomor>
 │    _(Cek XL/Axis via Sidompul)_
 │ ➤ .ping
 │    _(Cek kecepatan bot)_
