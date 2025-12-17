@@ -1,5 +1,5 @@
 /*
-⚠️ CODE UTAMA RESBOT JPM V3
+⚠️ CODE UTAMA RESBOT JPM V3 (FIXED QR & PLUGINS)
 */
 console.log('Start App ..');
 
@@ -9,7 +9,7 @@ import { fileURLToPath } from "url";
 import P from "pino";
 import clc from "cli-color";
 
-// IMPORT BAILEYS SAFE MODE
+// IMPORT BAILEYS
 import * as baileys from "baileys";
 const makeWASocket = baileys.default?.default || baileys.default || baileys;
 const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
@@ -17,7 +17,7 @@ const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = b
 import { handleCommand, ChangeStatus, getStatus } from "./lib/utils.js";
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
-// Import Plugin Fitur Baru
+// Load Plugins Manual (Untuk memastikan urutan)
 import fileManager from "./plugins/file_manager.js";
 import groupFeatures from "./plugins/group_features.js";
 
@@ -34,7 +34,6 @@ async function connectToWhatsApp() {
         version,
         auth: state,
         logger: P({ level: "silent" }),
-        // Hapus printQRInTerminal karena deprecated, kita handle di bawah
     });
 
     sock.ev.on("connection.update", (update) => {
@@ -42,7 +41,12 @@ async function connectToWhatsApp() {
         
         if (qr) {
              console.log(clc.yellow("Scan QR Code dibawah ini:"));
-             import('qrcode-terminal').then(m => m.generate(qr, { small: true }));
+             // FIX ERROR m.generate is not a function: Gunakan m.default.generate
+             import('qrcode-terminal').then(m => {
+                 const generate = m.default?.generate || m.generate;
+                 if (generate) generate(qr, { small: true });
+                 else console.log("QR Code:", qr);
+             }).catch(e => console.log("Gagal load qrcode-terminal", e));
         }
 
         if (connection === "close") {
@@ -70,7 +74,6 @@ function startScheduler(sock) {
         const time = `${String(now.getHours()).padStart(2,0)}:${String(now.getMinutes()).padStart(2,0)}`;
         const dbPath = './DATABASE/group_schedule.json';
         if (!fs.existsSync(dbPath)) return;
-        
         try {
             const db = JSON.parse(fs.readFileSync(dbPath));
             Object.entries(db).forEach(async ([id, t]) => {
@@ -96,14 +99,14 @@ async function handleIncomingMessages(sock, messageEvent) {
         const sender = msg.key.participant || msg.key.remoteJid;
         const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || "";
         
-        // 1. Anti-Link
+        // Anti-Link
         if (isGroup && (text.includes("chat.whatsapp.com") || text.includes("http"))) {
             const key = `${msg.key.remoteJid}-${sender}`;
             antiLinkData[key] = (antiLinkData[key] || 0) + 1;
             if (antiLinkData[key] > 2) await sock.sendMessage(msg.key.remoteJid, { delete: msg.key });
         }
 
-        // 2. Fitur File Fuzzy (#nama)
+        // Fitur File Fuzzy
         if (text.startsWith("#") && text.length > 2) {
             const query = text.substring(1).trim().toLowerCase();
             const dir = './ADDTIONAL/files';
@@ -119,11 +122,11 @@ async function handleIncomingMessages(sock, messageEvent) {
             }
         }
 
-        // 3. Plugins Baru
-        await fileManager(sock, msg.key.remoteJid, text, msg.key, messageEvent);
-        await groupFeatures(sock, msg.key.remoteJid, text, msg.key, isGroup);
+        // Plugins
+        if (fileManager) await fileManager(sock, msg.key.remoteJid, text, msg.key, messageEvent);
+        if (groupFeatures) await groupFeatures(sock, msg.key.remoteJid, text, msg.key, isGroup);
         
-        // 4. Command Handler Lama (dari utils)
+        // Command Handler
         const senderNum = sender.split('@')[0];
         await handleCommand(sock, msg.key.remoteJid, text, msg.key, senderNum, messageEvent, false);
 
