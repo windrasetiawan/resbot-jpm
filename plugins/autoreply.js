@@ -1,4 +1,4 @@
-async function autoreply(sock, sender, message, key, messageEvent) {
-    // Logika autoreply
+async function ping(sock, sender, message) {
+    await sock.sendMessage(sender, { text: 'Pong! 🏓' });
 }
-export default autoreply;
+export default ping;
