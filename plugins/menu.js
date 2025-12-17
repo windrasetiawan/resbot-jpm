@@ -1,16 +1,12 @@
 async function menu(sock, sender, message) {
-  const templates = `*✯ ᴍᴇɴᴜ ꜱᴄ ᴊᴘᴍ ✯*
-
-➽ ʟɪꜱᴛɢᴄ
-➽ ᴀᴜᴛᴏᴊᴘᴍ
-➽ ᴀᴜᴛᴏʀᴇᴘʟʏ
-➽ ᴊᴘᴍ
-➽ ᴊᴘᴍᴛᴀɢ
-➽ ᴘᴜꜱʜᴋᴏɴᴛᴀᴋ
-
-ᴄᴏᴘʏʀɪɢʜᴛ © autoresbot.com
-`;
-  await sock.sendMessage(sender, { text: templates });
+    const text = `
+╭❰ *MENU BOT* ❱
+│
+│ ➤ .autojpm
+│ ➤ .ping
+│ ➤ .addhc / .delhc
+│ ➤ .setopen / .setclose
+╰────────────`;
+    await sock.sendMessage(sender, { text: text });
 }
-
-module.exports = menu;
+export default menu;
