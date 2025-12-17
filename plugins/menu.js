@@ -4,11 +4,11 @@ import os from 'os';
 // --- HELPER: Ucapan Waktu ---
 function getGreeting() {
     const hour = new Date().getHours();
-    if (hour < 4) return 'Selamat Malam 🌚';
-    if (hour < 11) return 'Selamat Pagi 🌞';
-    if (hour < 15) return 'Selamat Siang 🌤️';
-    if (hour < 19) return 'Selamat Sore 🌇';
-    return 'Selamat Malam 🌚';
+    if (hour < 4) return 'Malam 🌚';
+    if (hour < 11) return 'Pagi 🌞';
+    if (hour < 15) return 'Siang 🌤️';
+    if (hour < 19) return 'Sore 🌇';
+    return 'Malam 🌚';
 }
 
 // --- HELPER: Uptime Bot ---
@@ -26,41 +26,36 @@ async function menu(sock, chatId, text, key, messageEvent) {
     // Ambil Nama User
     const pushName = messageEvent.pushName || "Kak";
     
-    // Waktu & Tanggal
-    const time = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
-    const date = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    // Waktu & Tanggal (Format Pendek agar tidak kepanjangan)
+    const time = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }) + " WIB";
+    const date = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', year: '2-digit' });
     
-    // Info VPS
-    const platform = os.platform();
-    const ram = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2) + " GB";
+    // Info VPS (Ambil RAM saja biar pendek)
+    const ram = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1) + "GB";
 
-    // --- LOGIKA BACA STATUS MODE (SELF/PUBLIC) ---
-    let modeStatus = "PUBLIC 🟢"; // Default
+    // --- BACA STATUS MODE ---
+    let modeStatus = "PUBLIC 🟢"; 
     try {
         if (fs.existsSync('./DATABASE/settings.json')) {
             const db = JSON.parse(fs.readFileSync('./DATABASE/settings.json'));
-            if (db.mode === 'self') {
-                modeStatus = "SELF 🔴 (Private)";
-            }
+            if (db.mode === 'self') modeStatus = "SELF 🔴";
         }
     } catch (e) {}
 
-    // --- TAMPILAN MENU ---
     const menuText = `
-╔══════════════════════════╗
-║ 🤖 *WINTUNELING BOT V3*
-╠══════════════════════════╣
-║ 👋 *Hi, ${pushName}*
-║ ${getGreeting()}
-║
-║ 🔒 *Mode* : ${modeStatus}
-║ 🕒 *Jam* : ${time}
-║ 📅 *Tgl* : ${date}
-║ ⏳ *Up* : ${getRuntime(process.uptime())}
-║ 💻 *VPS* : ${platform} | RAM ${ram}
-╚══════════════════════════╝
+╭───「 🤖 *WINTUNELING VPN BOT 」
+│
+│ 👋 *Hi, ${pushName}*
+│ ${getGreeting()}
+│
+│ 🔒 *Mode* : ${modeStatus}
+│ 🕒 *Jam* : ${time}
+│ 📅 *Tgl* : ${date}
+│ ⏳ *Up* : ${getRuntime(process.uptime())}
+│ 💻 *Spec* : RAM ${ram}
+╰────────────────────────
 
-╭─「 🚀 *AUTO JPM PRO* 」
+╭─「 🚀 *AUTO JPM* 」
 │ ➤ .autojpm <teks>
 │ ➤ .autojpm time <menit>
 │ ➤ .autojpm stop
@@ -69,16 +64,16 @@ async function menu(sock, chatId, text, key, messageEvent) {
 ╭─「 📡 *UTILITY* 」
 │ ➤ .cekkuota <nomor>
 │ ➤ .ping
-│ ➤ .speed
+│ ➤ .menu
 ╰──────────────────
 
 ╭─「 👑 *OWNER MENU* 」
 │ ➤ .self / .public
-│ ➤ .addowner <nomor>_
+│ ➤ .addowner <nomor>
 │ ➤ .delallhc
 ╰──────────────────
 
-╭─「 🛡️ *GROUP SEC* 」
+╭─「 🛡️ *GROUP SETTING* 」
 │ ➤ .antilink on/off
 │ ➤ .autojoin on/off
 │ ➤ .listgc
