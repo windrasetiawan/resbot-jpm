@@ -1,5 +1,5 @@
 /*
-⚠️ CODE UTAMA RESBOT JPM V3 (FIXED)
+⚠️ CODE UTAMA RESBOT JPM V3 (SESSION FIX)
 */
 console.log('Start App ..');
 
@@ -9,22 +9,19 @@ import { fileURLToPath } from "url";
 import P from "pino";
 import clc from "cli-color";
 import readline from "readline";
+import axios from "axios"; 
 
 // IMPORT BAILEYS
 import * as baileys from "baileys";
 const makeWASocket = baileys.default?.default || baileys.default || baileys;
-const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
+const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser } = baileys;
 
 // Import Helper
 import { handleCommand, ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
-
-// --- LOAD PLUGINS ---
 import fileManager from "./plugins/file_manager.js";
 import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
 import admin from "./plugins/admin.js"; 
-// [WAJIB ADA INI]
-import cekkuota from "./plugins/cekkuota.js"; 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const status = getStatus(`${__dirname}/sessions/`);
@@ -130,7 +127,10 @@ async function handleIncomingMessages(sock, msg) {
 
         const chatId = msg.key.remoteJid;
         const isGroup = chatId.endsWith('@g.us');
-        const sender = msg.key.participant || msg.key.remoteJid;
+        
+        // [FIX] Normalisasi Sender ID (Mengatasi masalah @lid)
+        const sender = isGroup ? (msg.key.participant || msg.key.remoteJid) : chatId;
+        
         const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || "";
         const senderNum = sender.split('@')[0];
         const dbData = getDbSettings();
@@ -156,7 +156,49 @@ async function handleIncomingMessages(sock, msg) {
                 .catch(() => sock.sendMessage(sender, { text: '❌ Gagal Join.' }));
         }
 
-        // 3. FITUR # FILE
+        // ==========================================================
+        // 3. FITUR CEK KUOTA (DIRECT CODE)
+        // ==========================================================
+        if (text.startsWith('.cekkuota') || text.startsWith('.cekxl')) {
+            console.log(`[INFO] Command .cekkuota terdeteksi dari ${senderNum}`);
+            
+            const args = text.split(" ").slice(1);
+            if (!args[0]) {
+                 await sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor!\nContoh: .cekkuota 62878xxxx" }, { quoted: msg });
+                 return; 
+            }
+
+            const msisdn = args[0].replace(/[^0-9]/g, '');
+            await sock.sendMessage(chatId, { text: "⏳ Sedang mengambil data..." }, { quoted: msg });
+
+            try {
+                const response = await axios.get(`https://apigw.kmsp-store.com/sidompul/v4/cek_kuota`, {
+                    params: { msisdn: msisdn, isJSON: 'true' },
+                    headers: { 
+                        'Authorization': 'Basic c2lkb21wdWxhcGk6YXBpZ3drbXNw', 
+                        'X-API-Key': '60ef29aa-a648-4668-90ae-20951ef90c55', 
+                        'X-App-Version': '4.0.0', 
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    timeout: 20000 // Timeout 20 detik
+                });
+
+                const res = response.data;
+                if (res.status === true) {
+                    let hasil = res.data.hasil || "Info kosong";
+                    hasil = hasil.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>?/gm, '');
+                    await sock.sendMessage(chatId, { text: `✅ *DETAIL KUOTA XL*\nNomor: ${msisdn}\n\n${hasil}` }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(chatId, { text: `❌ Gagal: ${res.message || "Nomor salah/gangguan"}` }, { quoted: msg });
+                }
+            } catch (e) {
+                console.error("Axios Error:", e.message);
+                await sock.sendMessage(chatId, { text: "❌ Error Koneksi Server." }, { quoted: msg });
+            }
+            return; 
+        }
+
+        // 4. FITUR # AMBIL FILE
         if (text.startsWith("#") && text.length > 1) {
             const query = text.substring(1).trim();
             const dir = './ADDTIONAL/files'; 
@@ -177,16 +219,12 @@ async function handleIncomingMessages(sock, msg) {
             }
         }
 
-        // --- PANGGIL PLUGINS ---
-        
-        // [CEK DISINI] Pastikan baris ini ada dan tidak dikomentari
-        if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg);
-
+        // --- PANGGIL PLUGINS LAIN ---
         if (fileManager) await fileManager(sock, chatId, text, msg.key, msg);
         if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg);
         if (admin) await admin(sock, chatId, text, msg.key, msg);
 
-        // Command Handler (Menu, dll)
+        // Command Handler
         await handleCommand(sock, chatId, text, msg.key, senderNum, msg, false);
 
     } catch (e) { console.error("Msg Error:", e); }
