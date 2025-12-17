@@ -1,34 +1,40 @@
-/*
-⚠️ PERINGATAN:
-Script ini **TIDAK BOLEH DIPERJUALBELIKAN** dalam bentuk apa pun!
+import fs from 'fs';
 
-╔══════════════════════════════════════════════╗
-║                🛠️ INFORMASI SCRIPT           ║
-╠══════════════════════════════════════════════╣
-║ 📦 Version   : 1.4
-║ 👨‍💻 Developer  : Azhari Creative              ║
-║ 🌐 Website    : https://autoresbot.com       ║
-║ 💻 GitHub     : github.com/autoresbot/resbot-jpm
-╚══════════════════════════════════════════════╝
+// Pastikan folder DATABASE ada
+if (!fs.existsSync('./DATABASE')) {
+    fs.mkdirSync('./DATABASE', { recursive: true });
+}
 
-📌 Mulai 11 April 2025,
-Script **Autoresbot** resmi menjadi **Open Source** dan dapat digunakan secara gratis:
-🔗 https://autoresbot.com
-*/
+// Load Owner dari file
+let ownerData = ["6285921645742"]; // Nomor default (GANTI DENGAN NOMORMU)
+if (fs.existsSync('./DATABASE/owner.json')) {
+    ownerData = JSON.parse(fs.readFileSync('./DATABASE/owner.json'));
+} else {
+    fs.writeFileSync('./DATABASE/owner.json', JSON.stringify(ownerData));
+}
 
-const numberAllowed = ["6285921645742"]; // Nomor yang diizinkan untuk chat ke bot, tambahkan kalau diperlukan
+export const numberAllowed = ownerData; 
 
-global.prefix = [".", "#"]; // Daftar prefix
-
-global.jeda = 20000; // 15 detik jeda pengiriman untuk pushkontak atau broadcast
-
-global.name_script = "WINTUNELING VPN";
-
-global.version = "1.4";
+global.prefix = [".", "#"]; 
+global.jeda = 15000; 
+global.name_script = "Script Resbot Jpm V3";
+global.version = "3.0";
 
 global.autojpm = {
-  hidetag: false, // jadikan true kalau mau hidetag, atau false kalau tidak
-  jedaPutaran: 10800000, // 10000 = 10 detik
+  hidetag: false, 
+  jedaPutaran: 10000, 
+  loopDelayHours: 1 // Default istirahat 1 jam
 };
 
-module.exports = { numberAllowed };
+// Fungsi helper save owner
+export function saveOwner(newNumber) {
+    const clean = newNumber.replace(/\D/g, '');
+    if (!ownerData.includes(clean)) {
+        ownerData.push(clean);
+        fs.writeFileSync('./DATABASE/owner.json', JSON.stringify(ownerData));
+        return true;
+    }
+    return false;
+}
+
+export { ownerData };
