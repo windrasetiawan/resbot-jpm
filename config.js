@@ -6,7 +6,7 @@ if (!fs.existsSync('./DATABASE')) {
 }
 
 const ownerPath = './DATABASE/owner.json';
-let ownerData = ["6285246154386"]; // Ganti dengan nomormu jika perlu (format 628xxx)
+let ownerData = ["6285921645742"]; // Ganti dengan nomormu jika perlu (format 628xxx)
 
 // Load owner dari file jika ada
 if (fs.existsSync(ownerPath)) {
