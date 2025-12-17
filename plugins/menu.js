@@ -43,7 +43,7 @@ async function menu(sock, chatId, text, key, messageEvent) {
     } catch (e) {}
 
     const menuText = `
-╭───「 🤖 *WINTUNELING VPN BOT 」
+╭───「 *WINTUNELING VPN* 」
 │
 │ 👋 *Hi, ${pushName}*
 │ ${getGreeting()}
