@@ -119,7 +119,7 @@ async function groupFeatures(sock, chatId, message, key, msg) {
             db.antilink.push(chatId);
             saveSettings(db);
             return sock.sendMessage(chatId, { 
-                text: "✅ *Antilink ON*\n\nAturan:\n- Link ke-1 & 2: Dibiarkan (Aman)\n- Link ke-3: Auto Hapus + Warning" 
+                text: "✅ *Antilink ON*\n\nAturan:\n- PROMOSI MAX 2X DALAM SEHARI JIKA MELEBIHI BATAS AKAN DI HAPUS OTOMATIS!!" 
             }, { quoted: msg });
         } else if (q === "off") {
             db.antilink = db.antilink.filter(id => id !== chatId);
