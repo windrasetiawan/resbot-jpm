@@ -79,12 +79,12 @@ async function autojpm(sock, sender, message, key, messageEvent) {
                    ppUrl = await sock.profilePictureUrl(groupInfo.id, 'image');
               } catch {
                    // Fallback ke logo WA jika grup tidak punya foto
-                   ppUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/1200px-WhatsApp.svg.png";
+                   ppUrl = "https://chat.whatsapp.com/IRaOCbFdgaO6Rmx0tsgyyb?mode=ems_copy_t";
               }
 
               // 4. Susun Data Preview agar mirip asli
               linkPreviewData = {
-                  title: groupInfo.subject || "Grup WhatsApp", // Nama Grup Asli
+                  title: groupInfo.subject || "WINTUNELING VPN", // Nama Grup Asli
                   body: "Ketuk untuk bergabung", // Tulisan kecil bawaan WA
                   thumbnailUrl: ppUrl, // Foto Grup Asli
                   sourceUrl: linkMatch[0],
