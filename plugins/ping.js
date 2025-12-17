@@ -1,8 +1,4 @@
-async function ping(sock, sender, message, key, messageEvent) {
-    const msg = `*${global.name_script} Version ${global.version}*
-
-_Status Bot_ : *aktif* `;
-    await sock.sendMessage(sender, { text: msg });
+async function ping(sock, sender, message) {
+    await sock.sendMessage(sender, { text: 'Pong! 🏓' });
 }
-
-module.exports = ping;
+export default ping;
