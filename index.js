@@ -164,7 +164,7 @@ async function handleIncomingMessages(sock, msg) {
             
             const args = text.split(" ").slice(1);
             if (!args[0]) {
-                 await sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor!\nContoh: .cekkuota 62878xxxx" }, { quoted: msg });
+                 await sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor!\nContoh: .cekxl 62878xxxx" }, { quoted: msg });
                  return; 
             }
 
