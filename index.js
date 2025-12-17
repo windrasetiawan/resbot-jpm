@@ -1,5 +1,5 @@
 /*
-⚠️ CODE UTAMA RESBOT JPM V3 (UPDATED)
+⚠️ CODE UTAMA RESBOT JPM V3 (FIXED)
 */
 console.log('Start App ..');
 
@@ -15,27 +15,26 @@ import * as baileys from "baileys";
 const makeWASocket = baileys.default?.default || baileys.default || baileys;
 const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
 
-import { handleCommand, ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; // Pastikan isOwner ada di utils atau sesuaikan
+// Import isOwner yang sudah diperbaiki
+import { handleCommand, ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
 // Load Plugins
 import fileManager from "./plugins/file_manager.js";
 import groupFeatures from "./plugins/group_features.js";
-import hcFeatures from "./plugins/hc_features.js"; // PLUGIN BARU (Buat file ini nanti)
+import hcFeatures from "./plugins/hc_features.js"; // Pastikan file ini sudah dibuat
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const status = getStatus(`${__dirname}/sessions/`);
 
-// --- DATABASE SETTINGS (ANTILINK & AUTOJOIN) ---
+// --- DATABASE SETTINGS ---
 const pathSettings = './DATABASE/settings.json';
 if (!fs.existsSync(pathSettings)) {
-    // Buat folder DATABASE jika belum ada
     if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE'); 
     fs.writeFileSync(pathSettings, JSON.stringify({ antilink: [], autojoin: false }, null, 2));
 }
 const getDbSettings = () => JSON.parse(fs.readFileSync(pathSettings));
 
-// Fungsi Input Console
 const question = (text) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     return new Promise((resolve) => {
@@ -124,36 +123,28 @@ async function handleIncomingMessages(sock, messageEvent) {
 
         const isGroup = msg.key.remoteJid.endsWith('@g.us');
         const sender = msg.key.participant || msg.key.remoteJid;
-        // Ambil isi pesan (text)
         const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || "";
-        
-        // --- LOGIKA UTAMA (Updated) ---
-        const dbData = getDbSettings();
         const senderNum = sender.split('@')[0];
+        const dbData = getDbSettings();
 
-        // 1. CEK ANTILINK (Jika ON di Database)
+        // 1. CEK ANTILINK
         if (isGroup && dbData.antilink.includes(msg.key.remoteJid)) {
             if (text.includes("chat.whatsapp.com")) {
-                // Cek Admin (Kita butuh fungsi cek admin, tapi untuk simpel kita skip check admin jika belum ada fungsinya)
-                // Anggap bot akan kick siapa saja kecuali Owner untuk saat ini, atau tambahkan logika isAdmin nanti
                 const groupMetadata = await sock.groupMetadata(msg.key.remoteJid);
                 const participants = groupMetadata.participants;
                 const isAdmin = participants.find(p => p.id === sender)?.admin;
                 
-                if (!isAdmin) { 
+                // Perbaikan: isOwner harus dipanggil sebagai fungsi isOwner(sender)
+                if (!isAdmin && !isOwner(sender)) { 
                     await sock.sendMessage(msg.key.remoteJid, { delete: msg.key });
                     await sock.groupParticipantsUpdate(msg.key.remoteJid, [sender], 'remove');
                 }
             }
         }
 
-        // 2. CEK AUTO JOIN (Global ON/OFF)
-        // Jika fitur ON, Owner kirim link -> Bot masuk
-        // Pastikan Anda sudah mengatur nomor owner di config atau utils
-        const CONFIG_OWNER = ["628xxx"]; // Ganti atau ambil dari config
-        const isOwnerSender = CONFIG_OWNER.includes(senderNum);
-
-        if (dbData.autojoin && isOwnerSender && text.includes("chat.whatsapp.com")) {
+        // 2. CEK AUTO JOIN
+        // Perbaikan: Gunakan fungsi isOwner untuk cek owner
+        if (dbData.autojoin && isOwner(sender) && text.includes("chat.whatsapp.com")) {
             let code = text.split('chat.whatsapp.com/')[1].split(' ')[0];
             await sock.groupAcceptInvite(code)
                 .then(() => sock.sendMessage(sender, { text: '✅ Berhasil Join!' }))
@@ -163,10 +154,9 @@ async function handleIncomingMessages(sock, messageEvent) {
         // --- PLUGINS ---
         if (fileManager) await fileManager(sock, msg.key.remoteJid, text, msg.key, messageEvent);
         if (groupFeatures) await groupFeatures(sock, msg.key.remoteJid, text, msg.key, isGroup, sender);
-        // Plugin HC Baru
         if (hcFeatures) await hcFeatures(sock, msg.key.remoteJid, text, msg.key, messageEvent);
 
-        // Command Handler Standard
+        // Command Handler
         await handleCommand(sock, msg.key.remoteJid, text, msg.key, senderNum, messageEvent, false);
 
     } catch (e) { console.error("Msg Error:", e); }
