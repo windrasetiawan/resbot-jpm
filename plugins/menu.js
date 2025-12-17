@@ -1,81 +1,75 @@
-import fs from 'fs';
-import os from 'os';
+import fs from "fs";
 
-// --- HELPER FUNCTIONS ---
-function getGreeting() {
-    const hour = new Date().getHours();
-    if (hour < 4) return 'Selamat Malam 🌚';
-    if (hour < 11) return 'Selamat Pagi 🌞';
-    if (hour < 15) return 'Selamat Siang 🌤️';
-    if (hour < 19) return 'Selamat Sore 🌇';
-    return 'Selamat Malam 🌚';
-}
+// FUNGSI WAKTU & TANGGAL
+const time = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
+const date = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-function getRuntime(seconds) {
-    seconds = Number(seconds);
-    var d = Math.floor(seconds / (3600 * 24));
-    var h = Math.floor(seconds % (3600 * 24) / 3600);
-    var m = Math.floor(seconds % 3600 / 60);
-    var s = Math.floor(seconds % 60);
-    var dDisplay = d > 0 ? d + "d " : "";
-    var hDisplay = h > 0 ? h + "h " : "";
-    var mDisplay = m > 0 ? m + "m " : "";
-    var sDisplay = s > 0 ? s + "s" : "";
-    return dDisplay + hDisplay + mDisplay + sDisplay;
-}
+// FUNGSI UCAPAN
+const ucapanWaktu = () => {
+    const jam = new Date().getHours();
+    if (jam >= 0 && jam < 4) return "Dini Hari 🌑";
+    if (jam >= 4 && jam < 10) return "Selamat Pagi ☀️";
+    if (jam >= 10 && jam < 15) return "Selamat Siang 🌤️";
+    if (jam >= 15 && jam < 18) return "Selamat Sore 🌇";
+    return "Selamat Malam 🌙";
+};
 
-async function menu(sock, sender, message) {
-    // Data Pengguna & Bot
-    const pushName = message.pushName || "User";
-    const time = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
-    const date = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-    
-    // Tampilan Menu Estetik
-    const text = `
-╔══════════════════════════╗
-║ 🤖 *WINTUNELING VPN BOT*
-╠══════════════════════════╣
-║ 👋 *Hi, ${pushName}*
-║ ${getGreeting()}
-║
-║ 🕒 *Jam* : ${time}
-║ 📅 *Tgl* : ${date}
-║ ⏳ *Uptime*: ${getRuntime(process.uptime())}
-║ 🚀 *Mode* : Public / Pairing
-╚══════════════════════════╝
+// EXPORT MENU UTAMA
+const menu = (prefix, pushname, runtime, latensibot) => {
+    return `
+${ucapanWaktu()} *${pushname}*! 👋
 
-╭─「 🔥 *POPULAR* 」
-│ ➤ .autojpm
-│ ➤ .ping
-│ ➤ .menu
-╰──────────────────
+🤖 *WINTUNELING VPN*
+│ 📅 *Tanggal:* ${date}
+│ ⌚ *Jam:* ${time}
+│ ⚡ *Speed:* ${latensibot} ms
+│ ⏳ *Uptime:* ${runtime}
+│ 🔒 *Mode:* Public/Self
+╰───────────────────
 
-╭─「 🏢 *GROUP MENU* 」
-│ ➤ .antilink on/off
-│ ➤ .open / .close
-│ ➤ .setopen <jam>
-│ ➤ .setclose <jam>
-│ ➤ .addowner <nomor>
-│ ➤ .listgc
-╰──────────────────
+🚀 *JPM & BROADCAST*
+(Fitur Utama)
+│ ${prefix}jpm [teks/image]
+│ ${prefix}jpmtag [teks/image] (JPM + Tag)
+│ ${prefix}autojpm [teks/image] (Looping)
+│ ${prefix}autojpm stop (Hentikan Loop)
+│ ${prefix}autojpmsettime [jam] (Set Delay)
+╰───────────────────
 
-╭─「 ⚙️ *CONFIG / HC* 」
-│ ➤ .listhc (Cek File)
-│ ➤ .gethc <namafile>
-│ ➤ .autojoin on/off
-╰──────────────────
+👥 *PUSH KONTAK*
+│ ${prefix}pushkontak [teks]
+│ (Kirim pesan ke semua member grup ini)
+╰───────────────────
 
-╭─「 📝 *NOTE* 」
-│ Gunakan fitur dengan bijak.
-│ Bot ini berjalan otomatis.
-╰──────────────────
+📂 *FILE MANAGER (HC/CONFIG)*
+│ ${prefix}addhc / ${prefix}addfile (Reply file)
+│ ${prefix}gethc [namafile]
+│ ${prefix}listhc / ${prefix}listconfig
+│ ${prefix}delhc [namafile]
+│ ${prefix}delallhc (Hapus semua)
+╰───────────────────
+
+🏢 *GROUP FEATURES*
+│ ${prefix}listgc (Daftar semua grup)
+│ ${prefix}open (Buka grup)
+│ ${prefix}close (Tutup grup)
+│ ${prefix}setopen [jam:menit]
+│ ${prefix}setclose [jam:menit]
+│ ${prefix}antilink on/off
+╰───────────────────
+
+👑 *OWNER & SYSTEM*
+│ ${prefix}self (Mode Sendiri)
+│ ${prefix}public (Mode Umum)
+│ ${prefix}autojoin on/off
+│ ${prefix}addowner [nomor]
+│ ${prefix}send [nomor] [pesan]
+│ ${prefix}ping
+╰───────────────────
+
+⚠️ *Note:* - Gunakan fitur JPM dengan jeda aman agar nomor awet.
+- File .hc tersimpan di folder *ADDTIONAL/files*.
 `;
-
-    // Mengirim pesan dengan mention agar lebih personal
-    await sock.sendMessage(sender, { 
-        text: text,
-        mentions: [sender]
-    });
-}
+};
 
 export default menu;
