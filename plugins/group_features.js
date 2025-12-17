@@ -65,7 +65,7 @@ export async function checkAntilink(sock, chatId, message, msg, sender, isAdmin)
             // 2. Kirim Peringatan
             // Kita cek agar bot tidak spam warning
             await sock.sendMessage(chatId, { 
-                text: `⚠️ *BATAS PROMOSI HABIS (3/3)*\n\n@${sender.split('@')[0]} Maaf, jatah kirim link promosi hari ini sudah habis. Pesan otomatis dihapus.`,
+                text: `⚠️ *PROMOSI 2X AJA BRO*\n\n@${sender.split('@')[0]} Promosi jangan banyak banyak bang ulang besok lagi`,
                 mentions: [sender]
             }, { quoted: msg });
 
