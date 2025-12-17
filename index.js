@@ -1,5 +1,5 @@
 /*
-⚠️ CODE UTAMA RESBOT JPM V3 (FINAL INTEGRATED)
+⚠️ CODE UTAMA RESBOT JPM V3 (FIXED)
 */
 console.log('Start App ..');
 
@@ -19,11 +19,12 @@ const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = b
 import { handleCommand, ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
-// --- LOAD PLUGINS (PASTIKAN SEMUA ADA DISINI) ---
+// --- LOAD PLUGINS ---
 import fileManager from "./plugins/file_manager.js";
 import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
 import admin from "./plugins/admin.js"; 
-import cekkuota from "./plugins/cekkuota.js"; // <--- PLUGIN BARU
+// [WAJIB ADA INI]
+import cekkuota from "./plugins/cekkuota.js"; 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const status = getStatus(`${__dirname}/sessions/`);
@@ -60,7 +61,7 @@ async function connectToWhatsApp() {
         logger: P({ level: "silent" }),
         printQRInTerminal: false,
         browser: ["Ubuntu", "Chrome", "20.0.04"],
-        generateHighQualityLinkPreview: true // Agar JPM Preview muncul
+        generateHighQualityLinkPreview: true 
     });
 
     if (!sock.authState.creds.registered) {
@@ -155,7 +156,7 @@ async function handleIncomingMessages(sock, msg) {
                 .catch(() => sock.sendMessage(sender, { text: '❌ Gagal Join.' }));
         }
 
-        // 3. AMBIL FILE VIA #
+        // 3. FITUR # FILE
         if (text.startsWith("#") && text.length > 1) {
             const query = text.substring(1).trim();
             const dir = './ADDTIONAL/files'; 
@@ -176,12 +177,14 @@ async function handleIncomingMessages(sock, msg) {
             }
         }
 
-        // --- PANGGIL SEMUA PLUGINS ---
+        // --- PANGGIL PLUGINS ---
+        
+        // [CEK DISINI] Pastikan baris ini ada dan tidak dikomentari
+        if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg);
+
         if (fileManager) await fileManager(sock, chatId, text, msg.key, msg);
         if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg);
         if (admin) await admin(sock, chatId, text, msg.key, msg);
-        // [PENTING] Panggil Cek Kuota Disini 👇
-        if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg);
 
         // Command Handler (Menu, dll)
         await handleCommand(sock, chatId, text, msg.key, senderNum, msg, false);
