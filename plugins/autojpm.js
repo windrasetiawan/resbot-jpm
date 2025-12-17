@@ -7,31 +7,38 @@ global.autojpm = global.autojpm || { delay: 60 };
 global.autojpmRunning = false;
 
 async function autojpm(sock, sender, message, key, messageEvent) {
-  const parts = message.trim().split(" ");
+  // Parsing Command
+  const parts = message.trim().split(" "); // [.autojpm, time, 60]
   const command = parts[0].toLowerCase();
+  const subCommand = parts[1] ? parts[1].toLowerCase() : "";
   const args = parts.slice(1);
-  const text = args.join(" ");
+  const text = args.join(" "); // text full setelah command
 
-  // --- 1. SETTING WAKTU ISTIRAHAT (FIXED) ---
-  if (command === ".autojpmsettime" || command === ".setautojpm") {
-      if (!args[0]) return sock.sendMessage(sender, { text: "⚠️ Masukkan angka menit!\nContoh: *.autojpmsettime 60*" });
+  // ==========================================
+  // 1. SETTING WAKTU (Cara Pakai: .autojpm time 60)
+  // ==========================================
+  if (subCommand === "time" || subCommand === "set" || subCommand === "timer") {
+      const menit = parseFloat(parts[2]);
+      if (isNaN(menit)) return sock.sendMessage(sender, { text: "⚠️ Masukkan angka menit!\nContoh: *.autojpm time 60*" });
       
-      const menit = parseFloat(args[0]);
-      if (isNaN(menit)) return sock.sendMessage(sender, { text: "⚠️ Format salah. Harus angka." });
-
       global.autojpm.delay = menit;
       return sock.sendMessage(sender, { text: `✅ Waktu istirahat diatur menjadi: *${menit} menit*.` });
   }
 
-  // --- 2. FITUR UTAMA AUTOJPM ---
-  if (command === ".autojpm") {
-      // Tombol Stop
-      if (text.toLowerCase() === "stop" || text.toLowerCase() === "off") {
-          global.autojpmRunning = false;
-          saveAutoJPMStatus(false);
-          return sock.sendMessage(sender, { text: "🛑 Auto JPM Berhasil Dihentikan." });
-      }
+  // ==========================================
+  // 2. STOP JPM (Cara Pakai: .autojpm stop)
+  // ==========================================
+  if (subCommand === "stop" || subCommand === "off") {
+      global.autojpmRunning = false;
+      saveAutoJPMStatus(false);
+      return sock.sendMessage(sender, { text: "🛑 Auto JPM Berhasil Dihentikan." });
+  }
 
+  // ==========================================
+  // 3. START JPM (Cara Pakai: .autojpm <teks>)
+  // ==========================================
+  // Cek apakah user mengirim teks/gambar untuk disebar
+  if (args.length > 0) {
       // Cek apakah sudah berjalan
       if (global.autojpmRunning) {
           return sock.sendMessage(sender, { text: "⚠️ Auto JPM sedang berjalan! Ketik *.autojpm stop* untuk berhenti." });
@@ -41,10 +48,10 @@ async function autojpm(sock, sender, message, key, messageEvent) {
       let imgPath = null;
       let msgToSend = {};
 
-      // Ambil Pesan (Anti Crash)
+      // Anti Crash Object
       const msg = messageEvent; 
 
-      // --- A. LOGIKA DOWNLOAD GAMBAR ---
+      // --- LOGIKA DOWNLOAD GAMBAR ---
       let msgToDownload = null;
       if (msg.message?.imageMessage) {
           msgToDownload = msg;
@@ -60,18 +67,13 @@ async function autojpm(sock, sender, message, key, messageEvent) {
           }
       }
 
-      // --- B. DETEKSI LINK UNTUK PREVIEW (FIXED) ---
-      // Mencari link grup WA pertama untuk dijadikan tombol
-      const linkRegex = /chat.whatsapp.com\/([0-9A-Za-z]{20,24})/i;
-      const linkMatch = text.match(linkRegex);
-
       saveAutoJPMStatus(true, text, imgPath);
-      await sock.sendMessage(sender, { text: `🚀 *JPM DIMULAI*\n\n⏱️ Istirahat: ${global.autojpm.delay} menit\n🎯 Target: Semua Grup` });
+      await sock.sendMessage(sender, { text: `🚀 *JPM DIMULAI (NATIVE MODE)*\n\n⏱️ Istirahat: ${global.autojpm.delay} menit\n🎯 Target: Semua Grup` });
 
-      // --- C. LOOPING PENYEBARAN ---
+      // --- LOOPING PENYEBARAN ---
       while (global.autojpmRunning) {
           const groups = await sock.groupFetchAllParticipating();
-          const whitelist = readWhitelist(); //
+          const whitelist = readWhitelist();
           const targets = Object.values(groups).filter(g => !whitelist.includes(g.id));
 
           let successCount = 0;
@@ -79,39 +81,23 @@ async function autojpm(sock, sender, message, key, messageEvent) {
           for (const g of targets) {
               if (!global.autojpmRunning) break;
 
-              // --- LOGIKA PEMBUATAN PESAN ---
+              // --- LOGIKA PESAN (Murni Native) ---
               if (imgPath && fs.existsSync(imgPath)) {
-                  // KASUS 1: GAMBAR + CAPTION
+                  // Jika ada gambar: Kirim Gambar + Caption
+                  // (Preview link WA biasanya tidak muncul jika ada gambar)
                   msgToSend = { image: fs.readFileSync(imgPath), caption: text };
               } else {
-                  // KASUS 2: TEXT SAJA (Cek Preview)
-                  if (linkMatch) {
-                      // Ada Link Grup -> Buat AdReply (Kartu)
-                      msgToSend = {
-                          text: text,
-                          contextInfo: {
-                              externalAdReply: {
-                                  title: "GABUNG GRUP SEKARANG", // Judul besar
-                                  body: "Klik di sini untuk bergabung", // Tulisan kecil
-                                  thumbnailUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/1200px-WhatsApp.svg.png", // Logo WA
-                                  sourceUrl: linkMatch[0], // Link grup yang terdeteksi
-                                  mediaType: 1,
-                                  renderLargerThumbnail: true
-                              }
-                          }
-                      };
-                  } else {
-                      // Tidak Ada Link -> Text Biasa
-                      msgToSend = { text: text };
-                  }
+                  // Jika TEXT SAJA: Kirim Teks Murni
+                  // WhatsApp akan otomatis memunculkan tombol "Lihat Grup" jika ada link
+                  msgToSend = { text: text };
               }
 
-              // KIRIM PESAN
+              // KIRIM
               try {
                   await sock.sendMessage(g.id, msgToSend);
                   successCount++;
-                  // Delay aman 3-6 detik per grup
-                  await new Promise(r => setTimeout(r, Math.floor(Math.random() * 3000) + 3000));
+                  // Delay Random 4-8 Detik (Memberi waktu WA generate preview)
+                  await new Promise(r => setTimeout(r, Math.floor(Math.random() * 4000) + 4000));
               } catch (e) {}
           }
           
@@ -122,9 +108,11 @@ async function autojpm(sock, sender, message, key, messageEvent) {
               text: `✅ *Selesai 1 Putaran*\n📨 Terkirim: ${successCount} Grup\n😴 Istirahat: ${global.autojpm.delay} Menit` 
           });
 
-          // Timer Istirahat (Menit -> Milidetik)
           await new Promise(r => setTimeout(r, global.autojpm.delay * 60 * 1000));
       }
+  } else {
+      // Jika user cuma ketik .autojpm tanpa argumen
+      return sock.sendMessage(sender, { text: "⚠️ Masukkan teks atau command!\n\n*Contoh:*\n.autojpm Halo ini promosi... (Mulai JPM)\n.autojpm time 60 (Set waktu)\n.autojpm stop (Berhenti)" });
   }
 }
 export default autojpm;
