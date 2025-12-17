@@ -21,8 +21,9 @@ import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
 // Load Plugins
 import fileManager from "./plugins/file_manager.js";
-import groupFeatures from "./plugins/group_features.js";
-import admin from "./plugins/admin.js"; // Opsional jika pakai mode self/public
+// [UPDATE] Import checkAntilink bersamaan dengan default export groupFeatures
+import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
+import admin from "./plugins/admin.js"; 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const status = getStatus(`${__dirname}/sessions/`);
@@ -52,13 +53,14 @@ const question = (text) => {
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState("sessions");
     const { version } = await fetchLatestBaileysVersion();
-   
+    
     const sock = makeWASocket({
         version,
         auth: state,
         logger: P({ level: "silent" }),
         printQRInTerminal: false,
-        browser: ["Ubuntu", "Chrome", "20.0.04"]
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        generateHighQualityLinkPreview: true
     });
 
     if (!sock.authState.creds.registered) {
@@ -95,7 +97,7 @@ async function connectToWhatsApp() {
         const msg = m.messages[0]; 
         await handleIncomingMessages(sock, msg);
     });
-    
+     
     sock.ev.on("creds.update", saveCreds);
 }
 
@@ -125,27 +127,36 @@ async function handleIncomingMessages(sock, msg) {
     try {
         if (!msg.message || msg.key.fromMe) return;
 
-        const isGroup = msg.key.remoteJid.endsWith('@g.us');
+        const chatId = msg.key.remoteJid;
+        const isGroup = chatId.endsWith('@g.us');
         const sender = msg.key.participant || msg.key.remoteJid;
         const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || "";
         const senderNum = sender.split('@')[0];
         const dbData = getDbSettings();
 
-        // 1. CEK ANTILINK
-        if (isGroup && dbData.antilink.includes(msg.key.remoteJid)) {
-            if (text.includes("chat.whatsapp.com")) {
-                const groupMetadata = await sock.groupMetadata(msg.key.remoteJid);
-                const participants = groupMetadata.participants;
-                const isAdmin = participants.find(p => p.id === sender)?.admin;
-                
-                if (!isAdmin && !isOwner(sender)) { 
-                    await sock.sendMessage(msg.key.remoteJid, { delete: msg.key });
-                    await sock.groupParticipantsUpdate(msg.key.remoteJid, [sender], 'remove');
-                }
-            }
+        // ==========================================
+        // [UPDATE] 1. CEK ANTILINK (NEW LOGIC)
+        // ==========================================
+        // Hanya cek jika di grup dan ada text mengandung "chat.whatsapp.com"
+        if (isGroup && text && /chat.whatsapp.com/i.test(text)) {
+            // Cek status Admin (hanya jika ada link, biar hemat resource)
+            let isAdmin = false;
+            try {
+                const groupMetadata = await sock.groupMetadata(chatId);
+                const participant = groupMetadata.participants.find(p => p.id === sender);
+                // Cek apakah admin atau superadmin
+                isAdmin = (participant?.admin === 'admin' || participant?.admin === 'superadmin');
+            } catch (e) {}
+
+            // Panggil Fungsi checkAntilink dari group_features.js
+            // Jika return TRUE, berarti pesan dihapus (Limit Habis), jadi stop proses
+            const isSpam = await checkAntilink(sock, chatId, text, msg, sender, isAdmin);
+            if (isSpam) return; 
         }
 
-        // 2. CEK AUTO JOIN
+        // ==========================================
+        // 2. CEK AUTO JOIN (TETAP ADA)
+        // ==========================================
         if (dbData.autojoin && isOwner(sender) && text.includes("chat.whatsapp.com")) {
             let code = text.split('chat.whatsapp.com/')[1].split(' ')[0];
             await sock.groupAcceptInvite(code)
@@ -153,44 +164,38 @@ async function handleIncomingMessages(sock, msg) {
                 .catch(() => sock.sendMessage(sender, { text: '❌ Gagal Join.' }));
         }
 
-        // --- 3. FITUR AMBIL FILE VIA # (RESTORED) ---
-        // Contoh: #indosat -> Mencari indosat.hc di folder ADDTIONAL/files
+        // ==========================================
+        // 3. FITUR AMBIL FILE VIA # (TETAP ADA)
+        // ==========================================
         if (text.startsWith("#") && text.length > 1) {
-            const query = text.substring(1).trim(); // Ambil teks setelah #
+            const query = text.substring(1).trim(); 
             const dir = './ADDTIONAL/files'; 
             
             if (fs.existsSync(dir)) {
                 const files = fs.readdirSync(dir);
-                
-                // Cari file yang cocok (Case Insensitive)
-                // 1. Cek Exact Match (misal: #file.hc)
                 let match = files.find(f => f.toLowerCase() === query.toLowerCase());
-                
-                // 2. Cek Match tanpa ekstensi (misal: user ketik #file padahal adanya file.hc)
                 if (!match) match = files.find(f => f.toLowerCase() === query.toLowerCase() + '.hc');
-                
-                // 3. Cek Contains (Fuzzy) - misal ketik #indo ketemu indosat.hc
                 if (!match) match = files.find(f => f.toLowerCase().includes(query.toLowerCase()));
 
                 if (match) {
-                    await sock.sendMessage(msg.key.remoteJid, { 
+                    await sock.sendMessage(chatId, { 
                         document: fs.readFileSync(path.join(dir, match)), 
                         mimetype: 'application/octet-stream', 
                         fileName: match,
                         caption: `✅ File Ditemukan: ${match}`
                     }, { quoted: msg });
-                    return; // Stop di sini, jangan lanjut ke command handler
+                    return; 
                 }
             }
         }
 
         // --- PLUGINS ---
-        if (fileManager) await fileManager(sock, msg.key.remoteJid, text, msg.key, msg);
-        if (groupFeatures) await groupFeatures(sock, msg.key.remoteJid, text, msg.key, msg);
-        if (admin) await admin(sock, msg.key.remoteJid, text, msg.key, msg);
+        if (fileManager) await fileManager(sock, chatId, text, msg.key, msg);
+        if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg);
+        if (admin) await admin(sock, chatId, text, msg.key, msg);
 
         // Command Handler
-        await handleCommand(sock, msg.key.remoteJid, text, msg.key, senderNum, msg, false);
+        await handleCommand(sock, chatId, text, msg.key, senderNum, msg, false);
 
     } catch (e) { console.error("Msg Error:", e); }
 }
