@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 
-// --- HELPER FUNCTIONS ---
+// --- HELPER: Ucapan Waktu ---
 function getGreeting() {
     const hour = new Date().getHours();
     if (hour < 4) return 'Selamat Malam 🌚';
@@ -11,32 +11,33 @@ function getGreeting() {
     return 'Selamat Malam 🌚';
 }
 
+// --- HELPER: Uptime Bot ---
 function getRuntime(seconds) {
     seconds = Number(seconds);
     var d = Math.floor(seconds / (3600 * 24));
     var h = Math.floor(seconds % (3600 * 24) / 3600);
     var m = Math.floor(seconds % 3600 / 60);
     var s = Math.floor(seconds % 60);
-    var dDisplay = d > 0 ? d + "d " : "";
-    var hDisplay = h > 0 ? h + "h " : "";
-    var mDisplay = m > 0 ? m + "m " : "";
-    var sDisplay = s > 0 ? s + "s" : "";
-    return dDisplay + hDisplay + mDisplay + sDisplay;
+    return `${d > 0 ? d + "h " : ""}${h > 0 ? h + "j " : ""}${m > 0 ? m + "m " : ""}${s}d`;
 }
 
-// PERBAIKAN: Menyesuaikan argumen dengan utils.js (5 argumen)
+// --- FUNGSI UTAMA MENU ---
 async function menu(sock, chatId, text, key, messageEvent) {
-    // Ambil Pushname dari object messageEvent (msg)
+    // Ambil Nama User
     const pushName = messageEvent.pushName || "Kak";
     
-    // Waktu & Tanggal
+    // Waktu & Tanggal (WIB)
     const time = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
     const date = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     
-    // Tampilan Menu
+    // Informasi Platform
+    const platform = os.platform();
+    const ram = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2) + " GB";
+
+    // --- TAMPILAN MENU ---
     const menuText = `
 ╔══════════════════════════╗
-║    *WINTUNELING VPN*
+║   🤖 *WINTUNELING VPN*
 ╠══════════════════════════╣
 ║ 👋 *Hi, ${pushName}*
 ║ ${getGreeting()}
@@ -44,39 +45,53 @@ async function menu(sock, chatId, text, key, messageEvent) {
 ║ 🕒 *Jam* : ${time}
 ║ 📅 *Tgl* : ${date}
 ║ ⏳ *Uptime*: ${getRuntime(process.uptime())}
+║ 💻 *Info* : ${platform} | RAM ${ram}
 ╚══════════════════════════╝
 
-╭─「 🔥 *POPULAR* 」
-│ ➤ .autojpm
-│ ➤ .ping
-│ ➤ .menu
+╭─「 🚀 *AUTO JPM (BARU)* 」
+│ ➤ .autojpm <teks/link>
+│    _(Kirim pesan ke semua grup)_
+│ ➤ .autojpmsettime <menit>
+│    _(Atur waktu istirahat loop)_
+│ ➤ .autojpm stop
+│    _(Hentikan proses JPM)_
 ╰──────────────────
 
-╭─「 🏢 *GROUP MENU* 」
-│ ➤ .antilink on/off
-│ ➤ .open / .close
-│ ➤ .setopen <jam>
-│ ➤ .setclose <jam>
-│ ➤ .addowner <nomor>
+╭─「 🛡️ *GROUP SECURITY* 」
+│ ➤ .antilink on
+│    _(Mode: 1x-2x Aman, 3x Hapus)_
+│ ➤ .antilink off
+│ ➤ .autojoin on/off
+│    _(Otomatis masuk via link)_
 │ ➤ .listgc
 ╰──────────────────
 
-╭─「 ⚙️ *CONFIG / HC* 」
-│ ➤ .listhc (Cek File)
-│ ➤ .gethc <namafile>
-│ ➤ .autojoin on/off
+╭─「 🏢 *GROUP ADMIN* 」
+│ ➤ .open
+│ ➤ .close
+│ ➤ .setopen <jam>
+│ ➤ .setclose <jam>
+│ ➤ .addowner <nomor>
 ╰──────────────────
 
-╭─「 📝 *NOTE* 」
-│ Gunakan fitur dengan bijak.
-│ Bot ini berjalan otomatis.
+╭─「 ⚙️ *FILE / SYSTEM* 」
+│ ➤ .ping
+│ ➤ .menu
+│ ➤ .listhc
+│ ➤ .gethc <namafile>
+╰──────────────────
+
+╭─「 📝 *CATATAN* 」
+│ • JPM support kirim Gambar.
+│ • Antilink reset setiap jam 00:00.
 ╰──────────────────
 `;
 
-    // Mengirim pesan
+    // Mengirim pesan menu
     await sock.sendMessage(chatId, { 
         text: menuText,
-        mentions: [messageEvent.key.participant || messageEvent.key.remoteJid]
+        // Mention user agar notif masuk
+        mentions: [messageEvent.key.participant || chatId]
     }, { quoted: messageEvent });
 }
 
