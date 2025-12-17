@@ -1,5 +1,5 @@
 /*
-⚠️ CODE UTAMA RESBOT JPM V3 (FIXED GROUP ARGS)
+⚠️ CODE UTAMA RESBOT JPM V3 (FIXED FUZZY #)
 */
 console.log('Start App ..');
 
@@ -22,8 +22,7 @@ import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 // Load Plugins
 import fileManager from "./plugins/file_manager.js";
 import groupFeatures from "./plugins/group_features.js";
-import hcFeatures from "./plugins/hc_features.js"; 
-import admin from "./plugins/admin.js"; // Pastikan admin.js ada (opsional)
+import admin from "./plugins/admin.js"; // Opsional jika pakai mode self/public
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const status = getStatus(`${__dirname}/sessions/`);
@@ -122,7 +121,6 @@ function startScheduler(sock) {
     }, 60000);
 }
 
-// FUNGSI UTAMA HANDLER
 async function handleIncomingMessages(sock, msg) {
     try {
         if (!msg.message || msg.key.fromMe) return;
@@ -155,15 +153,41 @@ async function handleIncomingMessages(sock, msg) {
                 .catch(() => sock.sendMessage(sender, { text: '❌ Gagal Join.' }));
         }
 
+        // --- 3. FITUR AMBIL FILE VIA # (RESTORED) ---
+        // Contoh: #indosat -> Mencari indosat.hc di folder ADDTIONAL/files
+        if (text.startsWith("#") && text.length > 1) {
+            const query = text.substring(1).trim(); // Ambil teks setelah #
+            const dir = './ADDTIONAL/files'; 
+            
+            if (fs.existsSync(dir)) {
+                const files = fs.readdirSync(dir);
+                
+                // Cari file yang cocok (Case Insensitive)
+                // 1. Cek Exact Match (misal: #file.hc)
+                let match = files.find(f => f.toLowerCase() === query.toLowerCase());
+                
+                // 2. Cek Match tanpa ekstensi (misal: user ketik #file padahal adanya file.hc)
+                if (!match) match = files.find(f => f.toLowerCase() === query.toLowerCase() + '.hc');
+                
+                // 3. Cek Contains (Fuzzy) - misal ketik #indo ketemu indosat.hc
+                if (!match) match = files.find(f => f.toLowerCase().includes(query.toLowerCase()));
+
+                if (match) {
+                    await sock.sendMessage(msg.key.remoteJid, { 
+                        document: fs.readFileSync(path.join(dir, match)), 
+                        mimetype: 'application/octet-stream', 
+                        fileName: match,
+                        caption: `✅ File Ditemukan: ${match}`
+                    }, { quoted: msg });
+                    return; // Stop di sini, jangan lanjut ke command handler
+                }
+            }
+        }
+
         // --- PLUGINS ---
-        // PENTING: Semua plugin sekarang menerima 5 argumen: (sock, chatId, text, key, msg)
         if (fileManager) await fileManager(sock, msg.key.remoteJid, text, msg.key, msg);
-        
-        // [FIXED] Panggil groupFeatures dengan 'msg' sebagai argumen ke-5
         if (groupFeatures) await groupFeatures(sock, msg.key.remoteJid, text, msg.key, msg);
-        
-        if (hcFeatures) await hcFeatures(sock, msg.key.remoteJid, text, msg.key, msg);
-        if (admin) await admin(sock, msg.key.remoteJid, text, msg.key, msg); // Opsional
+        if (admin) await admin(sock, msg.key.remoteJid, text, msg.key, msg);
 
         // Command Handler
         await handleCommand(sock, msg.key.remoteJid, text, msg.key, senderNum, msg, false);
