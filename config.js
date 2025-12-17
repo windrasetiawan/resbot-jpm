@@ -6,16 +6,18 @@ if (!fs.existsSync('./DATABASE')) {
 }
 
 const ownerPath = './DATABASE/owner.json';
-let ownerData = ["6285921645742"]; // Ganti dengan nomormu jika perlu (format 628xxx)
 
-// Load owner dari file jika ada
-if (fs.existsSync(ownerPath)) {
-    try {
-        ownerData = JSON.parse(fs.readFileSync(ownerPath));
-    } catch { console.error("Gagal baca database owner"); }
-} else {
+// --- BAGIAN INI SAYA UBAH SESUAI LOG KAMU ---
+// Nomor 49697553178765 diambil dari log "Akses ditolak" yang kamu kirim
+let ownerData = ["49697553178765"]; 
+
+// Kita paksa tulis ulang database agar nomor ini langsung aktif
+try {
     fs.writeFileSync(ownerPath, JSON.stringify(ownerData));
+} catch (e) {
+    console.error("Gagal menulis database owner:", e);
 }
+// --------------------------------------------
 
 export const numberAllowed = ownerData; 
 
