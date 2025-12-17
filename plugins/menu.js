@@ -26,13 +26,24 @@ async function menu(sock, chatId, text, key, messageEvent) {
     // Ambil Nama User
     const pushName = messageEvent.pushName || "Kak";
     
-    // Waktu & Tanggal (WIB)
+    // Waktu & Tanggal
     const time = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
     const date = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     
-    // Informasi Platform VPS
+    // Info VPS
     const platform = os.platform();
     const ram = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2) + " GB";
+
+    // --- LOGIKA BACA STATUS MODE (SELF/PUBLIC) ---
+    let modeStatus = "PUBLIC 🟢"; // Default
+    try {
+        if (fs.existsSync('./DATABASE/settings.json')) {
+            const db = JSON.parse(fs.readFileSync('./DATABASE/settings.json'));
+            if (db.mode === 'self') {
+                modeStatus = "SELF 🔴 (Private)";
+            }
+        }
+    } catch (e) {}
 
     // --- TAMPILAN MENU ---
     const menuText = `
@@ -42,69 +53,46 @@ async function menu(sock, chatId, text, key, messageEvent) {
 ║ 👋 *Hi, ${pushName}*
 ║ ${getGreeting()}
 ║
+║ 🔒 *Mode* : ${modeStatus}
 ║ 🕒 *Jam* : ${time}
 ║ 📅 *Tgl* : ${date}
-║ ⏳ *Uptime*: ${getRuntime(process.uptime())}
+║ ⏳ *Up* : ${getRuntime(process.uptime())}
 ║ 💻 *VPS* : ${platform} | RAM ${ram}
 ╚══════════════════════════╝
 
-╭─「 🚀 *AUTO JPM* 」
-│ ➤ .autojpm <teks/link>
-│    _(Kirim pesan + tombol join)_
+╭─「 🚀 *AUTO JPM PRO* 」
+│ ➤ .autojpm <teks>
 │ ➤ .autojpm time <menit>
-│    _(Atur waktu istirahat loop)_
 │ ➤ .autojpm stop
-│    _(Matikan JPM)_
 ╰──────────────────
 
-╭─「 📡 *TOOLS & UTILITY* 」
-│ ➤ .cekxl <nomor>
-│    _(Cek XL/Axis via Sidompul)_
+╭─「 📡 *UTILITY* 」
+│ ➤ .cekkuota <nomor>
 │ ➤ .ping
-│    _(Cek kecepatan bot)_
 │ ➤ .menu
-│    _(Tampilkan pesan ini)_
 ╰──────────────────
 
-╭─「 🛡️ *GROUP SECURITY* 」
-│ ➤ .antilink on
-│    _(Mode: 1-2x Aman, 3x Hapus)_
-│ ➤ .antilink off
-│    _(Matikan Antilink)_
+╭─「 👑 *OWNER MENU* 」
+│ ➤ .self / .public
+│ ➤ .addowner <nomor>_
+│ ➤ .delallhc
+╰──────────────────
+
+╭─「 🛡️ *GROUP SEC* 」
+│ ➤ .antilink on/off
 │ ➤ .autojoin on/off
-│    _(Auto masuk grup via link)_
-╰──────────────────
-
-╭─「 🏢 *MANAJEMEN GRUP* 」
-│ ➤ .open / .close
-│    _(Buka/Tutup Grup)_
-│ ➤ .setopen <jam>
-│    _(Jadwal Buka Otomatis)_
-│ ➤ .setclose <jam>
-│    _(Jadwal Tutup Otomatis)_
 │ ➤ .listgc
-│    _(List Grup Bot)_
-│ ➤ .addowner <nomor>
 ╰──────────────────
 
-╭─「 📂 *DATABASE FILE* 」
+╭─「 📂 *DATABASE* 」
 │ ➤ .listhc
-│ ➤ .gethc <namafile>
 │ ➤ #<namafile>
-│    _(Cara cepat ambil file)_
-╰──────────────────
-
-╭─「 📝 *CATATAN* 」
-│ • JPM Native: Kirim teks berisi link
-│   grup agar muncul tombol Join.
-│ • Cek Kuota butuh waktu ±5 detik.
 ╰──────────────────
 `;
 
     // Mengirim pesan menu
     await sock.sendMessage(chatId, { 
         text: menuText,
-        // Mention user agar notif masuk (Bold nama user di menu)
         mentions: [messageEvent.key.participant || chatId]
     }, { quoted: messageEvent });
 }
