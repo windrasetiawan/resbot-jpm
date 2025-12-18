@@ -185,7 +185,7 @@ async function handleIncomingMessages(sock, msg) {
         // --- FEATURES ---
         if (text.startsWith('.cekkuota') || text.startsWith('.cekxl')) {
             const args = text.split(" ").slice(1);
-            if (!args[0]) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor." }, { quoted: msg });
+            if (!args[0]) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor XL/Axis!\nContoh: *.cekkuota 62878xxxx*." }, { quoted: msg });
             const msisdn = args[0].replace(/[^0-9]/g, '');
             await sock.sendMessage(chatId, { text: "⏳ Mengambil data..." }, { quoted: msg });
             try {
