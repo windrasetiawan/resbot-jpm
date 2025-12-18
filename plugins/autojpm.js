@@ -7,15 +7,15 @@ global.autojpm = global.autojpm || { delay: 60 };
 global.autojpmRunning = false;
 
 async function autojpm(sock, sender, message, key, messageEvent) {
-  // Parsing Command yang lebih rapi
+  // Parsing Command
   const parts = message.trim().split(" "); 
   const command = parts[0].toLowerCase();
   const subCommand = parts[1] ? parts[1].toLowerCase() : "";
   const args = parts.slice(1);
-  const text = args.join(" "); // Text full
+  const text = args.join(" "); // Text full promosi
 
   // ==========================================
-  // 1. SETTING WAKTU (Cara Pakai: .autojpm time 60)
+  // 1. SETTING WAKTU (Contoh: .autojpm time 60)
   // ==========================================
   if (subCommand === "time" || subCommand === "timer" || subCommand === "set") {
       const menit = parseFloat(parts[2]);
@@ -26,7 +26,7 @@ async function autojpm(sock, sender, message, key, messageEvent) {
   }
 
   // ==========================================
-  // 2. STOP JPM (Cara Pakai: .autojpm stop)
+  // 2. STOP JPM (Contoh: .autojpm stop)
   // ==========================================
   if (subCommand === "stop" || subCommand === "off") {
       global.autojpmRunning = false;
@@ -35,7 +35,7 @@ async function autojpm(sock, sender, message, key, messageEvent) {
   }
 
   // ==========================================
-  // 3. START JPM (Cara Pakai: .autojpm <teks>)
+  // 3. START JPM (Contoh: .autojpm Teks...)
   // ==========================================
   if (command === ".autojpm" && args.length > 0) {
       if (global.autojpmRunning) {
@@ -45,10 +45,9 @@ async function autojpm(sock, sender, message, key, messageEvent) {
       global.autojpmRunning = true;
       let imgPath = null;
       
-      // Object Pesan (Anti Crash)
       const msg = messageEvent; 
 
-      // A. DOWNLOAD GAMBAR (Jika ada)
+      // A. CEK DOWNLOAD GAMBAR (Jika user melampirkan gambar manual)
       let msgToDownload = null;
       if (msg.message?.imageMessage) {
           msgToDownload = msg;
@@ -57,51 +56,67 @@ async function autojpm(sock, sender, message, key, messageEvent) {
       }
 
       if (msgToDownload) {
-          if (await downloadAndSaveMedia(sock, msgToDownload, "jpm.jpg", "../tmp")) {
-              imgPath = "./tmp/jpm.jpg";
+          try {
+              if (await downloadAndSaveMedia(sock, msgToDownload, "jpm.jpg", "../tmp")) {
+                  imgPath = "./tmp/jpm.jpg";
+              }
+          } catch (e) {
+              console.log("Gagal download media:", e);
           }
       }
 
-      // B. SIAPKAN DATA PREVIEW (NATIVE LOOK)
+      // B. SIAPKAN DATA PREVIEW (NATIVE GROUP LOOK)
       let linkPreviewData = null;
-      const linkRegex = /chat.whatsapp.com\/([0-9A-Za-z]{20,24})/i;
+      
+      // Regex Link WA (Aman menangkap kode unik meski ada ?mode=...)
+      const linkRegex = /chat.whatsapp.com\/([0-9A-Za-z]{20,24})/;
       const linkMatch = text.match(linkRegex);
 
-      if (linkMatch) {
+      // Hanya buat preview jika tidak ada gambar manual
+      if (linkMatch && !imgPath) {
           try {
-              // 1. Ambil Kode Grup
-              const inviteCode = linkMatch[1];
-              // 2. Fetch Info Grup dari WA (Nama & ID)
+              const inviteCode = linkMatch[1]; // Mengambil 'IRaOCbFdga...'
+              
+              // 1. Ambil Info Grup (Nama Grup)
               const groupInfo = await sock.groupGetInviteInfo(inviteCode);
-              // 3. Fetch Foto Profil Grup (Resolusi Tinggi)
+              
+              // 2. Ambil Foto Profil (Logika Smart Fallback)
               let ppUrl;
               try {
+                   // Coba ambil PP Grup Target
                    ppUrl = await sock.profilePictureUrl(groupInfo.id, 'image');
               } catch {
-                   // Fallback ke logo WA jika grup tidak punya foto
-                   ppUrl = "https://chat.whatsapp.com/IRaOCbFdgaO6Rmx0tsgyyb?mode=ems_copy_t";
+                   // Jika Grup Gak Punya PP, Ambil PP Bot
+                   try {
+                       ppUrl = await sock.profilePictureUrl(sock.user.id, 'image');
+                   } catch {
+                       // Jika Bot Gak Punya PP, Pakai Gambar Default
+                       ppUrl = "https://telegra.ph/file/0c32e7f8d68962d85196f.jpg";
+                   }
               }
 
-              // 4. Susun Data Preview agar mirip asli
+              // 3. Susun Tampilan Kartu
               linkPreviewData = {
-                  title: groupInfo.subject || "WINTUNELING VPN", // Nama Grup Asli
-                  body: "Ketuk untuk bergabung", // Tulisan kecil bawaan WA
-                  thumbnailUrl: ppUrl, // Foto Grup Asli
-                  sourceUrl: linkMatch[0],
+                  title: groupInfo.subject || "Join WhatsApp Group", 
+                  body: `Bergabunglah bersama kami!`, 
+                  thumbnailUrl: ppUrl, 
+                  sourceUrl: `https://chat.whatsapp.com/${inviteCode}`, // Link Bersih
                   mediaType: 1,
-                  renderLargerThumbnail: true // Tampilan kartu besar (Invite Card)
+                  renderLargerThumbnail: true 
               };
 
           } catch (e) {
-              console.log("Gagal fetch info grup untuk preview:", e);
-              // Jika gagal, biarkan kosong (nanti jadi teks biasa)
+              console.log("Gagal fetch info grup:", e);
           }
       }
 
       saveAutoJPMStatus(true, text, imgPath);
-      await sock.sendMessage(sender, { text: `🚀 *JPM DIMULAI*\n\n⏱️ Istirahat: ${global.autojpm.delay} menit\n🎯 Target: Semua Grup` });
+      
+      await sock.sendMessage(sender, { 
+          text: `🚀 *JPM DIMULAI*\n\n📝 *Preview:* ${linkPreviewData ? "✅ NATIVE CARD" : "❌ TEKS BIASA"}\n⏱️ *Jeda:* ${global.autojpm.delay} menit` 
+      });
 
-      // C. LOOPING
+      // C. LOOPING KIRIM PESAN
       while (global.autojpmRunning) {
           const groups = await sock.groupFetchAllParticipating();
           const whitelist = readWhitelist();
@@ -114,20 +129,22 @@ async function autojpm(sock, sender, message, key, messageEvent) {
 
               let msgToSend = {};
 
-              // KASUS 1: ADA GAMBAR
+              // Prioritas 1: Gambar Manual
               if (imgPath && fs.existsSync(imgPath)) {
                   msgToSend = { image: fs.readFileSync(imgPath), caption: text };
               } 
-              // KASUS 2: TEKS + LINK PREVIEW (Native Look)
+              // Prioritas 2: Kartu Native (Link Preview)
               else if (linkPreviewData) {
                   msgToSend = {
                       text: text,
                       contextInfo: {
-                          externalAdReply: linkPreviewData
+                          externalAdReply: linkPreviewData,
+                          forwardingScore: 999,
+                          isForwarded: true
                       }
                   };
               } 
-              // KASUS 3: TEKS BIASA
+              // Prioritas 3: Teks Biasa
               else {
                   msgToSend = { text: text };
               }
@@ -135,23 +152,22 @@ async function autojpm(sock, sender, message, key, messageEvent) {
               try {
                   await sock.sendMessage(g.id, msgToSend);
                   successCount++;
-                  // Delay Random 4-8 Detik
-                  await new Promise(r => setTimeout(r, Math.floor(Math.random() * 4000) + 4000));
+                  // Delay per pesan (5-8 detik) agar aman
+                  await new Promise(r => setTimeout(r, Math.floor(Math.random() * 3000) + 5000));
               } catch (e) {}
           }
           
           if (!global.autojpmRunning) break;
 
-          // LAPORAN
+          // LAPORAN & ISTIRAHAT
           await sock.sendMessage(sender, { 
-              text: `✅ *Putaran Selesai*\n📨 Terkirim: ${successCount} Grup\n😴 Istirahat: ${global.autojpm.delay} Menit` 
+              text: `✅ *Selesai 1 Putaran*\n📨 Terkirim: ${successCount} Grup\n😴 Istirahat ${global.autojpm.delay} menit.` 
           });
 
           await new Promise(r => setTimeout(r, global.autojpm.delay * 60 * 1000));
       }
   } else {
-      // Halaman Help Jika Salah Ketik
-      return sock.sendMessage(sender, { text: "⚠️ Format Salah!\n\n*Cara Pakai:*\n.autojpm <teks_promosi>\n.autojpm time 60\n.autojpm stop" });
+      return sock.sendMessage(sender, { text: "⚠️ *Cara Pakai:*\n.autojpm <kata-kata promosi + link grup>\n\nContoh:\n.autojpm Ayo join sini https://chat.whatsapp.com/IRaOCbFdgaO6Rmx0tsgyyb" });
   }
 }
 export default autojpm;
