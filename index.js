@@ -154,7 +154,7 @@ async function handleIncomingMessages(sock, msg) {
                             document: fs.readFileSync(path.join(dir, f)), 
                             mimetype: 'application/octet-stream', 
                             fileName: f,
-                            caption: `📄 ${f}`
+
                         }, { quoted: msg });
                         
                         await new Promise(r => setTimeout(r, 1500)); // Delay anti-spam
