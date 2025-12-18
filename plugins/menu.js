@@ -70,7 +70,6 @@ async function menu(sock, chatId, text, key, messageEvent) {
 ╭─「 👑 *OWNER MENU* 」
 │ ➤ .self / .public
 │ ➤ .addowner <nomor>
-│ ➤ .delallhc
 ╰──────────────────
 
 ╭─「 🛡️ *GROUP SETTING* 」
@@ -81,6 +80,10 @@ async function menu(sock, chatId, text, key, messageEvent) {
 
 ╭─「 📂 *DATABASE* 」
 │ ➤ .listhc
+│ ➤ .clearhc
+│ ➤ .addfile
+│ ➤ .delallhc
+│ ➤ .updatehc (ZIP FILE)
 │ ➤ #wintuneling (semua config .hc)
 │ ➤ #<namafile>
 ╰──────────────────
