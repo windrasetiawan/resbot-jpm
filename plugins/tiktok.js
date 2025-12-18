@@ -45,8 +45,7 @@ async function tiktok(sock, chatId, message, key, msg) {
                 }
 
                 // Susun Caption
-                const caption = `✅ *TIKTOK DOWNLOADER*
-
+                const caption = `
 👤 *Author:* ${data.author?.nickname || "-"}
 📝 *Title:* ${data.title || "-"}
 👀 *Views:* ${data.stats?.views || "0"}
