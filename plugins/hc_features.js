@@ -1,59 +1,188 @@
 import fs from "fs";
 import path from "path";
+import AdmZip from "adm-zip"; 
+import { downloadAndSaveMedia, isOwner } from "../lib/utils.js";
 
-const folderHC = './DATABASE/hc';
+// KONFIGURASI FOLDER
+const targetDir = "./ADDTIONAL/files";
+const tempDir = "./tmp_extract"; 
 
 // Pastikan folder ada
-if (!fs.existsSync(folderHC)) {
-    if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE');
-    fs.mkdirSync(folderHC);
+if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+
+// Helper: Cari file .hc secara rekursif
+function findHcFiles(dir, fileList = []) {
+    const files = fs.readdirSync(dir);
+    files.forEach(file => {
+        const filePath = path.join(dir, file);
+        const stat = fs.statSync(filePath);
+        if (stat.isDirectory()) {
+            findHcFiles(filePath, fileList); 
+        } else {
+            if (file.endsWith('.hc')) {
+                fileList.push(filePath);
+            }
+        }
+    });
+    return fileList;
 }
 
 async function hcFeatures(sock, chatId, message, key, msg) {
+    const sender = msg.key.participant || msg.key.remoteJid;
     const parts = message.trim().split(" ");
-    const command = parts[0]?.toLowerCase().substring(1);
-    const q = parts.slice(1).join(" ");
+    
+    // Parsing Command
+    let rawCmd = parts[0]?.toLowerCase();
+    let command = rawCmd;
+    if (command.startsWith(".") || command.startsWith("#")) {
+        command = command.substring(1);
+    }
+    
+    const args = parts.slice(1).join(" "); 
+    const isCreator = isOwner(sender);
 
-    // --- LIST HC ---
+    // ==========================================
+    // 1. LIST HC
+    // ==========================================
     if (command === "listhc" || command === "listconfig") {
         try {
-            const files = fs.readdirSync(folderHC);
-            const hcFiles = files.filter(f => f.endsWith('.hc')); 
+            const files = fs.readdirSync(targetDir).filter(f => f.endsWith('.hc')); 
+            if (files.length === 0) return sock.sendMessage(chatId, { text: "📂 *DATABASE KOSONG*" }, { quoted: msg });
 
-            if (hcFiles.length === 0) {
-                return sock.sendMessage(chatId, { text: "📂 *DATABASE HC KOSONG*\nBelum ada file .hc yang diupload ke folder database." }, { quoted: msg });
-            }
-
-            let text = `📂 *LIST CONFIG HC* (Total: ${hcFiles.length})\n\n`;
-            hcFiles.forEach((file, index) => {
+            let text = `📂 *STOK CONFIG HC* (Total: ${files.length})\n\n`;
+            files.forEach((file, index) => {
                 text += `${index + 1}. ${file}\n`;
             });
-            text += `\n📥 *Cara Ambil:*\nKetik: .gethc <namafile>`;
-            
+            text += `\n🚀 *Shortcut:*\nKetik tanda pagar + nama file.\nContoh: *#${files[0].replace('.hc','')}*`;
             return sock.sendMessage(chatId, { text: text }, { quoted: msg });
-
         } catch (e) {
-            console.error(e);
-            return sock.sendMessage(chatId, { text: "❌ Gagal membaca folder database." }, { quoted: msg });
+            return sock.sendMessage(chatId, { text: "❌ Error database." }, { quoted: msg });
         }
     }
 
-    // --- GET HC ---
+    // ==========================================
+    // 2. GET HC (Manual)
+    // ==========================================
     if (command === "gethc") {
-        if (!q) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nama file!\nContoh: *.gethc indosat.hc*" }, { quoted: msg });
+        if (!args) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nama file! Contoh: .gethc indosat.hc" }, { quoted: msg });
 
-        const filename = q.trim();
-        const filePath = path.join(folderHC, filename);
+        const filename = args.trim();
+        const allFiles = fs.readdirSync(targetDir);
+        const matchFile = allFiles.find(f => f.toLowerCase() === filename.toLowerCase()) || 
+                          allFiles.find(f => f.toLowerCase() === (filename + '.hc').toLowerCase());
 
-        if (fs.existsSync(filePath)) {
+        if (matchFile) {
             await sock.sendMessage(chatId, { 
-                document: fs.readFileSync(filePath), 
+                document: fs.readFileSync(path.join(targetDir, matchFile)), 
                 mimetype: 'application/octet-stream', 
-                fileName: filename,
-                caption: `✅ File Config: ${filename}`
+                fileName: matchFile,
+                caption: `✅ Config: ${matchFile}`
             }, { quoted: msg });
         } else {
-            return sock.sendMessage(chatId, { text: "❌ File tidak ditemukan! Pastikan nama file sesuai di .listhc" }, { quoted: msg });
+            return sock.sendMessage(chatId, { text: "❌ File tidak ditemukan." }, { quoted: msg });
+        }
+    }
+
+    //  #WINTUNELING (Kirim Semua)
+    if (message.trim().toLowerCase() === "#wintuneling") {
+        const files = fs.readdirSync(targetDir).filter(f => f.endsWith('.hc'));
+        if (files.length === 0) return sock.sendMessage(chatId, { text: "⚠️ Config belum ready." }, { quoted: msg });
+
+        await sock.sendMessage(chatId, { text: `🚀 Mengirim ${files.length} file config...` }, { quoted: msg });
+
+        for (let f of files) {
+            try {
+                await sock.sendMessage(chatId, { 
+                    document: fs.readFileSync(path.join(targetDir, f)), 
+                    mimetype: 'application/octet-stream', 
+                    fileName: f
+                }, { quoted: msg });
+                await new Promise(r => setTimeout(r, 1500)); 
+            } catch (e) {}
+        }
+        return; // Stop disini agar tidak lanjut ke shortcut bawah
+    }
+
+    // ADD & DEL & UPDATE (Admin Tools)
+    if (command === "addhc" || command === "addfile") {
+        if (!isCreator) return sock.sendMessage(chatId, { text: "❌ Khusus Owner!" }, { quoted: msg });
+        if (!args) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nama file!" }, { quoted: msg });
+
+        const name = args.endsWith('.hc') ? args : args + '.hc';
+        let media = msg.message?.documentMessage || msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.documentMessage;
+        
+        if (media) {
+             const success = await downloadAndSaveMedia(sock, { message: { documentMessage: media } }, name, "ADDTIONAL/files");
+             if (success) return sock.sendMessage(chatId, { text: `✅ File *${name}* tersimpan!` }, { quoted: msg });
+             return sock.sendMessage(chatId, { text: "❌ Gagal menyimpan file." }, { quoted: msg });
+        }
+        return sock.sendMessage(chatId, { text: "⚠️ Kirim file dokumennya!" }, { quoted: msg });
+    }
+
+    if (command === "delhc") {
+        if (!isCreator) return sock.sendMessage(chatId, { text: "❌ Khusus Owner!" }, { quoted: msg });
+        if (!args) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nama file!" }, { quoted: msg });
+        
+        const name = args.endsWith('.hc') ? args : args + '.hc';
+        const p = path.join(targetDir, name);
+        if (fs.existsSync(p)) { fs.unlinkSync(p); return sock.sendMessage(chatId, { text: `✅ Dihapus: ${name}` }, { quoted: msg }); }
+        return sock.sendMessage(chatId, { text: "❌ File tidak ditemukan." }, { quoted: msg });
+    }
+
+    if (command === "updatehc") {
+        if (!isCreator) return sock.sendMessage(chatId, { text: "❌ Khusus Owner!" }, { quoted: msg });
+        const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        const document = msg.message?.documentMessage || quoted?.documentMessage;
+
+        if (!document?.fileName?.endsWith(".zip")) return sock.sendMessage(chatId, { text: "⚠️ Kirim file .zip!" }, { quoted: msg });
+        
+        await sock.sendMessage(chatId, { text: "⏳ Update via Zip..." }, { quoted: msg });
+        try {
+            const zipName = "temp.zip";
+            await downloadAndSaveMedia(sock, document.fileName ? msg : { message: quoted }, zipName, "tmp");
+            const zipPath = path.join("./tmp", zipName);
+
+            // Bersihkan folder target
+            const oldFiles = fs.readdirSync(targetDir).filter(f => f.endsWith('.hc'));
+            oldFiles.forEach(f => fs.unlinkSync(path.join(targetDir, f)));
+
+            const zip = new AdmZip(zipPath);
+            if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+            fs.mkdirSync(tempDir);
+            zip.extractAllTo(tempDir, true);
+
+            const foundFiles = findHcFiles(tempDir);
+            foundFiles.forEach(src => fs.renameSync(src, path.join(targetDir, path.basename(src))));
+
+            fs.unlinkSync(zipPath);
+            fs.rmSync(tempDir, { recursive: true, force: true });
+
+            return sock.sendMessage(chatId, { text: `✅ *UPDATE SUKSES*\nTotal: ${foundFiles.length} file .hc` }, { quoted: msg });
+        } catch (e) { return sock.sendMessage(chatId, { text: `❌ Gagal: ${e.message}` }, { quoted: msg }); }
+    }
+
+    if (command === "clearhc") {
+        if (!isCreator) return;
+        const files = fs.readdirSync(targetDir).filter(f => f.endsWith('.hc'));
+        files.forEach(f => fs.unlinkSync(path.join(targetDir, f)));
+        return sock.sendMessage(chatId, { text: `✅ ${files.length} file dihapus.` }, { quoted: msg });
+    }
+
+    // Cek jika pesan diawali # dan bukan command lain
+    if (rawCmd.startsWith("#")) {
+        const query = rawCmd.substring(1); // Ambil kata setelah #
+        const allFiles = fs.readdirSync(targetDir);
+        
+        // Cari file yang mengandung kata kunci (Case Insensitive)
+        const matchFile = allFiles.find(f => f.toLowerCase().includes(query) && f.endsWith('.hc'));
+
+        if (matchFile) {
+             await sock.sendMessage(chatId, { 
+                document: fs.readFileSync(path.join(targetDir, matchFile)), 
+                mimetype: 'application/octet-stream', 
+                fileName: matchFile,
+                caption: `✅ Config: ${matchFile}`
+            }, { quoted: msg });
         }
     }
 }
