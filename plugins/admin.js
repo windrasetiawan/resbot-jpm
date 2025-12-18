@@ -1,54 +1,49 @@
-import fs from "fs";
 import { isOwner } from "../lib/utils.js";
-
-const settingsPath = './DATABASE/settings.json';
-
-const getDb = () => {
-    if (!fs.existsSync(settingsPath)) return { mode: 'public', antilink: [], autojoin: false, owners: [] };
-    return JSON.parse(fs.readFileSync(settingsPath));
-};
-const saveDb = (data) => fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2));
 
 async function admin(sock, chatId, message, key, msg) {
     const sender = msg.key.participant || msg.key.remoteJid;
     const parts = message.trim().split(" ");
-    const command = parts[0]?.toLowerCase().substring(1); 
+    
+    let command = parts[0]?.toLowerCase();
+    if (command.startsWith(".") || command.startsWith("#")) {
+        command = command.substring(1);
+    }
     const args = parts[1]?.toLowerCase();
 
-    // 1. Validasi Owner di awal (Agar tidak perlu ditulis ulang di setiap if)
+    // Validasi Owner
     if (!isOwner(sender)) return; 
 
     // --- MENU AUTOJOIN ---
     if (command === "autojoin") {
-        let db = getDb();
+        let db = global.db.settings; // Ambil RAM Global
+
         if (args === "on") {
             db.autojoin = true;
-            saveDb(db);
+            global.saveSettings(); // Simpan Permanent
             return sock.sendMessage(chatId, { text: "✅ *Auto Join: ON*\nBot akan masuk ke semua link grup yang terdeteksi." }, { quoted: msg });
         } else if (args === "off") {
             db.autojoin = false;
-            saveDb(db);
+            global.saveSettings(); // Simpan Permanent
             return sock.sendMessage(chatId, { text: "🛑 *Auto Join: OFF*" }, { quoted: msg });
         } else {
             return sock.sendMessage(chatId, { text: `Status Auto Join: *${db.autojoin ? 'ON' : 'OFF'}*\n\nKetik: *.autojoin on* atau *.autojoin off*` }, { quoted: msg });
         }
     }
 
-    // --- MODE SELF ---
+    // --- MODE SELF/PUBLIC ---
     if (command === "self") {
-        let db = getDb();
+        let db = global.db.settings;
         db.mode = 'self';
-        saveDb(db);
+        global.saveSettings();
         return sock.sendMessage(chatId, { text: "🔒 *MODE SELF AKTIF*\nHanya Owner yang bisa menggunakan bot." }, { quoted: msg });
     }
 
-    // --- MODE PUBLIC ---
     if (command === "public") {
-        let db = getDb();
+        let db = global.db.settings;
         db.mode = 'public';
-        saveDb(db);
+        global.saveSettings();
         return sock.sendMessage(chatId, { text: "🔓 *MODE PUBLIC AKTIF*\nSemua orang bisa menggunakan bot." }, { quoted: msg });
     }
-} // <--- Penutup fungsi admin HARUS ada di paling bawah
+}
 
 export default admin;
