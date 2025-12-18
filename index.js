@@ -7,23 +7,27 @@ import readline from "readline";
 import axios from "axios"; 
 import * as baileys from "baileys";
 
-// IMPORT PLUGINS & HELPERS
+// --- IMPORT SEMUA PLUGIN SECARA MANUAL ---
 import { handleCommand, ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; 
 import { addGroupLinks } from "./lib/grupLinkStore.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
+
+// Plugin Utama
 import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
 import admin from "./plugins/admin.js"; 
 import ping from "./plugins/ping.js";
 import hcFeatures from "./plugins/hc_features.js"; 
 import cekkuota from "./plugins/cekkuota.js";      
-// [DIHAPUS] import tiktok dan menu manual agar tidak bentrok dengan auto-loader
+import tiktok from "./plugins/tiktok.js"; 
+import instagram from "./plugins/instagram.js"; // Pastikan file ini ada
+import menu from "./plugins/menu.js";     
 
 const makeWASocket = baileys.default?.default || baileys.default || baileys;
 const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser } = baileys;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// --- [OPTIMASI] DATABASE SYSTEM (MEMORY CACHE) ---
+// --- DATABASE MEMORY ---
 const pathSettings = './DATABASE/settings.json';
 global.db = { settings: {} };
 
@@ -42,7 +46,6 @@ if (!fs.existsSync(pathSettings)) {
 global.saveSettings = () => {
     fs.writeFileSync(pathSettings, JSON.stringify(global.db.settings, null, 2));
 };
-// -------------------------------------------------
 
 const question = (text) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -132,7 +135,6 @@ async function handleIncomingMessages(sock, msg) {
         if (text.includes("chat.whatsapp.com")) {
             const linkRegex = /chat\.whatsapp\.com\/([0-9A-Za-z]{20,24})/g;
             const links = text.match(linkRegex);
-            
             if (links && links.length > 0) {
                 for (let link of links) {
                     addGroupLinks(link); 
@@ -146,21 +148,22 @@ async function handleIncomingMessages(sock, msg) {
             }
         }
 
-        // --- LOAD PLUGINS ---
-        await Promise.all([
-             ping ? ping(sock, chatId, text, msg.key, msg) : Promise.resolve(),
-             groupFeatures ? groupFeatures(sock, chatId, text, msg.key, msg) : Promise.resolve(),
-             admin ? admin(sock, chatId, text, msg.key, msg) : Promise.resolve(),
-        ]);
+        // --- LOAD PLUGINS (SEQUENTIAL - AMAN DARI MACET) ---
+        // Kita jalankan satu per satu. Jika satu error, yang lain tetap jalan.
+        try { if (ping) await ping(sock, chatId, text, msg.key, msg); } catch(e) { console.error('Ping Err', e); }
+        try { if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg); } catch(e) { console.error('Group Err', e); }
+        try { if (admin) await admin(sock, chatId, text, msg.key, msg); } catch(e) { console.error('Admin Err', e); }
+        try { if (hcFeatures) await hcFeatures(sock, chatId, text, msg.key, msg); } catch(e) { console.error('HC Err', e); }
+        try { if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg); } catch(e) { console.error('Kuota Err', e); }
         
-        // Plugin berat
-        if (hcFeatures) await hcFeatures(sock, chatId, text, msg.key, msg);
-        if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg);
+        // Plugin Downloader
+        try { if (tiktok) await tiktok(sock, chatId, text, msg.key, msg); } catch(e) { console.error('TT Err', e); }
+        try { if (instagram) await instagram(sock, chatId, text, msg.key, msg); } catch(e) { console.error('IG Err', e); }
         
-        // [PERBAIKAN] HAPUS call manual tiktok & menu. 
-        // Biarkan `handleCommand` di bawah yang mengurusnya secara otomatis.
+        // Menu paling bawah
+        try { if (menu) await menu(sock, chatId, text, msg.key, msg); } catch(e) { console.error('Menu Err', e); }
 
-        // --- COMMANDS BAWAAN ---
+        // --- COMMANDS BAWAAN (Inline) ---
         if (text === '.self' && isCreator) {
             dbData.mode = 'self'; global.saveSettings();
             return sock.sendMessage(chatId, { text: '🔒 *Mode SELF Aktif*' }, { quoted: msg });
@@ -187,9 +190,6 @@ async function handleIncomingMessages(sock, msg) {
             } catch {}
             if (await checkAntilink(sock, chatId, text, msg, sender, isAdmin)) return;
         }
-
-        // AUTO-LOADER PLUGIN (Ini yang akan menjalankan tiktok.js, menu.js, dll)
-        await handleCommand(sock, chatId, text, msg.key, senderNum, msg, false);
 
     } catch (e) { console.error("Msg Error:", e); }
 }
