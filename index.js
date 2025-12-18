@@ -4,22 +4,21 @@ import { fileURLToPath } from "url";
 import P from "pino";
 import clc from "cli-color";
 import readline from "readline";
-import axios from "axios"; 
 import * as baileys from "baileys";
 
-// --- IMPORT SEMUA PLUGIN SECARA MANUAL ---
-import { handleCommand, ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; 
+// IMPORT HELPERS
+import { ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; 
 import { addGroupLinks } from "./lib/grupLinkStore.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
-// Plugin Utama
+// IMPORT PLUGINS (MANUAL)
 import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
 import admin from "./plugins/admin.js"; 
 import ping from "./plugins/ping.js";
 import hcFeatures from "./plugins/hc_features.js"; 
 import cekkuota from "./plugins/cekkuota.js";      
 import tiktok from "./plugins/tiktok.js"; 
-import instagram from "./plugins/instagram.js"; // Pastikan file ini ada
+import instagram from "./plugins/instagram.js"; 
 import menu from "./plugins/menu.js";     
 
 const makeWASocket = baileys.default?.default || baileys.default || baileys;
@@ -27,10 +26,13 @@ const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidN
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// --- DATABASE MEMORY ---
+// ==============================================
+//  DATABASE SYSTEM (GLOBAL MEMORY)
+// ==============================================
 const pathSettings = './DATABASE/settings.json';
 global.db = { settings: {} };
 
+// Load Database saat Start
 if (!fs.existsSync(pathSettings)) {
     if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE', { recursive: true }); 
     global.db.settings = { mode: 'public', antilink: [], autojoin: false, owners: [] };
@@ -43,6 +45,7 @@ if (!fs.existsSync(pathSettings)) {
     }
 }
 
+// Fungsi Simpan (Dipanggil oleh plugin)
 global.saveSettings = () => {
     fs.writeFileSync(pathSettings, JSON.stringify(global.db.settings, null, 2));
 };
@@ -125,45 +128,62 @@ async function handleIncomingMessages(sock, msg) {
             console.log(clc.cyan(`📩 [Pesan] ${senderNum}: ${text}`));
         }
 
+        // --- GLOBAL VARIABLES FOR PLUGINS ---
         const dbData = global.db.settings;
         const owners = dbData.owners || [];
         const isCreator = isOwner(sender) || owners.includes(senderNum);
 
+        // Security: Mode Self (Hanya Owner yang bisa akses)
         if (dbData.mode === 'self' && !isCreator) return;
 
-        // --- FITUR AUTO JOIN ---
+        // --- 1. FITUR AUTO JOIN (Global Check) ---
         if (text.includes("chat.whatsapp.com")) {
             const linkRegex = /chat\.whatsapp\.com\/([0-9A-Za-z]{20,24})/g;
             const links = text.match(linkRegex);
             if (links && links.length > 0) {
                 for (let link of links) {
-                    addGroupLinks(link); 
+                    addGroupLinks(link); // Simpan link ke database
+                    
                     if (dbData.autojoin) { 
                         try {
                             const code = link.split('chat.whatsapp.com/')[1];
-                            sock.groupAcceptInvite(code).catch(() => {});
+                            sock.groupAcceptInvite(code)
+                                .then(() => console.log(clc.green(`✅ Auto Join: ${code}`)))
+                                .catch(() => {});
                         } catch (e) {}
                     }
                 }
             }
         }
 
-        // --- LOAD PLUGINS (SEQUENTIAL - AMAN DARI MACET) ---
-        // Kita jalankan satu per satu. Jika satu error, yang lain tetap jalan.
-        try { if (ping) await ping(sock, chatId, text, msg.key, msg); } catch(e) { console.error('Ping Err', e); }
-        try { if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg); } catch(e) { console.error('Group Err', e); }
-        try { if (admin) await admin(sock, chatId, text, msg.key, msg); } catch(e) { console.error('Admin Err', e); }
-        try { if (hcFeatures) await hcFeatures(sock, chatId, text, msg.key, msg); } catch(e) { console.error('HC Err', e); }
-        try { if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg); } catch(e) { console.error('Kuota Err', e); }
-        
-        // Plugin Downloader
-        try { if (tiktok) await tiktok(sock, chatId, text, msg.key, msg); } catch(e) { console.error('TT Err', e); }
-        try { if (instagram) await instagram(sock, chatId, text, msg.key, msg); } catch(e) { console.error('IG Err', e); }
-        
-        // Menu paling bawah
-        try { if (menu) await menu(sock, chatId, text, msg.key, msg); } catch(e) { console.error('Menu Err', e); }
+        // --- 2. ANTILINK GRUP ---
+        if (isGroup) {
+            let isAdmin = false;
+            try {
+                const meta = await sock.groupMetadata(chatId);
+                const p = meta.participants.find(x => x.id === sender);
+                isAdmin = (p?.admin === 'admin' || p?.admin === 'superadmin');
+            } catch {}
+            
+            // Jika terdeteksi link, stop proses (return)
+            if (await checkAntilink(sock, chatId, text, msg, sender, isAdmin)) return;
+        }
 
-        // --- COMMANDS BAWAAN (Inline) ---
+        // --- 3. EKSEKUSI PLUGINS (MANUAL URUTAN) ---
+        // Kita panggil satu per satu agar tidak bentrok.
+        // Try-Catch digunakan agar jika satu plugin error, bot tidak mati.
+
+        try { if (ping) await ping(sock, chatId, text, msg.key, msg); } catch(e) {}
+        try { if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg); } catch(e) {}
+        try { if (admin) await admin(sock, chatId, text, msg.key, msg); } catch(e) {}
+        try { if (hcFeatures) await hcFeatures(sock, chatId, text, msg.key, msg); } catch(e) {}
+        try { if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg); } catch(e) {}
+        try { if (tiktok) await tiktok(sock, chatId, text, msg.key, msg); } catch(e) {}
+        try { if (instagram) await instagram(sock, chatId, text, msg.key, msg); } catch(e) {}
+        try { if (menu) await menu(sock, chatId, text, msg.key, msg); } catch(e) {}
+
+        // --- 4. COMMAND DARURAT (Add Owner & Mode) ---
+        // Ini backup jika plugin admin bermasalah
         if (text === '.self' && isCreator) {
             dbData.mode = 'self'; global.saveSettings();
             return sock.sendMessage(chatId, { text: '🔒 *Mode SELF Aktif*' }, { quoted: msg });
@@ -178,17 +198,6 @@ async function handleIncomingMessages(sock, msg) {
             if (!dbData.owners) dbData.owners = [];
             dbData.owners.push(target); global.saveSettings();
             return sock.sendMessage(chatId, { text: `✅ Owner ditambah: ${target}` }, { quoted: msg });
-        }
-
-        // --- ANTILINK GRUP ---
-        if (isGroup) {
-            let isAdmin = false;
-            try {
-                const meta = await sock.groupMetadata(chatId);
-                const p = meta.participants.find(x => x.id === sender);
-                isAdmin = (p?.admin === 'admin' || p?.admin === 'superadmin');
-            } catch {}
-            if (await checkAntilink(sock, chatId, text, msg, sender, isAdmin)) return;
         }
 
     } catch (e) { console.error("Msg Error:", e); }
