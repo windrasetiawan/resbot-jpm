@@ -11,7 +11,6 @@ import * as baileys from "baileys";
 import { handleCommand, ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; 
 import { addGroupLinks } from "./lib/grupLinkStore.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
-import fileManager from "./plugins/file_manager.js";
 import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
 import admin from "./plugins/admin.js"; 
 import ping from "./plugins/ping.js";
@@ -207,7 +206,6 @@ async function handleIncomingMessages(sock, msg) {
         }
 
         if (ping) await ping(sock, chatId, text, msg.key, msg);
-        if (fileManager) await fileManager(sock, chatId, text, msg.key, msg);
         if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg);
         if (admin) await admin(sock, chatId, text, msg.key, msg);
 
