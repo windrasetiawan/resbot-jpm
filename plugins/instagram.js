@@ -21,10 +21,10 @@ async function instagram(sock, chatId, message, key, msg) {
             return sock.sendMessage(chatId, { text: "⚠️ Link tidak valid! Pastikan link dari Instagram." }, { quoted: msg });
         }
 
-        await sock.sendMessage(chatId, { text: "⏳ Sedang mendownload video..." }, { quoted: msg });
+        await sock.sendMessage(chatId, { text: "⏳ Sedang mendownload media Instagram..." }, { quoted: msg });
 
         try {
-            // Request ke API sesuai request Anda
+            // Request ke API
             const apiUrl = `https://api.jerexd666.wongireng.my.id/download/instagram?url=${encodeURIComponent(url)}`;
             const response = await axios.get(apiUrl);
             const res = response.data;
@@ -33,19 +33,18 @@ async function instagram(sock, chatId, message, key, msg) {
                 const mediaList = res.result.media;
                 const metadata = res.result.metadata || {};
 
-                // Kirim setiap media yang ditemukan (bisa slide/carousel)
+                // Kirim setiap media yang ditemukan (Slide/Carousel)
                 for (let i = 0; i < mediaList.length; i++) {
                     const item = mediaList[i];
                     
-                    // Deteksi tipe konten berdasarkan URL atau Type dari API
-                    // Note: API kadang memberi label "image" padahal isinya mp4, jadi kita cek URL-nya juga
+                    // Deteksi Video vs Image
                     let isVideo = item.type === 'video' || item.url.includes('.mp4');
 
                     const caption = i === 0 ? `
 📝 *Caption:* ${metadata.caption || "-"}
 ❤️ *Likes:* ${metadata.like || 0}
 💬 *Comments:* ${metadata.comment || 0}
-` : ""; // Caption hanya di media pertama agar tidak spam
+` : ""; 
 
                     if (isVideo) {
                         await sock.sendMessage(chatId, { 
