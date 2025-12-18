@@ -45,7 +45,7 @@ async function connectToWhatsApp() {
 
     if (!sock.authState.creds.registered) {
         const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-        const phoneNumber = await new Promise(resolve => rl.question(clc.yellow("Nomor WA (628xxx): "), resolve));
+        const phoneNumber = await new Promise(resolve => rl.question(clc.yellow("Masukan Nomor WA (Contoh 628xxx): "), resolve));
         rl.close();
         const code = await sock.requestPairingCode(phoneNumber.trim());
         console.log(clc.green.bold(`🔗 KODE PAIRING: ${code}`));
