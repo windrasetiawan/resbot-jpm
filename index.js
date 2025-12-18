@@ -14,32 +14,38 @@ import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
 import admin from "./plugins/admin.js"; 
 import ping from "./plugins/ping.js";
-import hcFeatures from "./plugins/hc_features.js"; // PLUGIN HC (FILE MANAGER)
-import cekkuota from "./plugins/cekkuota.js";      // PLUGIN CEK KUOTA
-import tiktok from "./plugins/tiktok.js";
+import hcFeatures from "./plugins/hc_features.js"; 
+import cekkuota from "./plugins/cekkuota.js";      
+import tiktok from "./plugins/tiktok.js"; 
+import menu from "./plugins/menu.js";     
 
 const makeWASocket = baileys.default?.default || baileys.default || baileys;
 const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser } = baileys;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// DATABASE SETTINGS
+// --- [OPTIMASI] DATABASE SYSTEM (MEMORY CACHE) ---
+// Bot hanya baca file 1x saat start, selanjutnya baca dari RAM
 const pathSettings = './DATABASE/settings.json';
+global.db = { settings: {} };
+
 if (!fs.existsSync(pathSettings)) {
     if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE', { recursive: true }); 
-    fs.writeFileSync(pathSettings, JSON.stringify({ 
-        mode: 'public', 
-        antilink: [], 
-        autojoin: false,
-        owners: []
-    }, null, 2));
+    global.db.settings = { mode: 'public', antilink: [], autojoin: false, owners: [] };
+    fs.writeFileSync(pathSettings, JSON.stringify(global.db.settings, null, 2));
+} else {
+    try {
+        global.db.settings = JSON.parse(fs.readFileSync(pathSettings));
+    } catch {
+        global.db.settings = { mode: 'public', antilink: [], autojoin: false, owners: [] };
+    }
 }
 
-const getDbSettings = () => {
-    try { return JSON.parse(fs.readFileSync(pathSettings)); } 
-    catch { return {}; }
+// Fungsi Simpan (Hanya dipanggil saat ada perubahan)
+global.saveSettings = () => {
+    fs.writeFileSync(pathSettings, JSON.stringify(global.db.settings, null, 2));
 };
-const saveDbSettings = (data) => fs.writeFileSync(pathSettings, JSON.stringify(data, null, 2));
+// -------------------------------------------------
 
 const question = (text) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -58,7 +64,10 @@ async function connectToWhatsApp() {
         logger: P({ level: "silent" }),
         printQRInTerminal: false,
         browser: ["Ubuntu", "Chrome", "20.0.04"],
-        generateHighQualityLinkPreview: true 
+        generateHighQualityLinkPreview: true,
+        // Optimasi Socket
+        syncFullHistory: false, 
+        markOnlineOnConnect: false 
     });
 
     if (!sock.authState.creds.registered) {
@@ -107,60 +116,74 @@ async function handleIncomingMessages(sock, msg) {
         let sender = isGroup ? (msg.key.participant || msg.key.remoteJid) : chatId;
         sender = jidNormalizedUser(sender);
         const senderNum = sender.split('@')[0];
-        const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || "";
         
-        const dbData = getDbSettings();
+        const text = msg.message?.conversation || 
+                     msg.message?.extendedTextMessage?.text || 
+                     msg.message?.imageMessage?.caption || 
+                     msg.message?.videoMessage?.caption || "";
+
+        // Log Pesan (Hanya tampilkan jika bukan pesan sistem)
+        if (text && text.length < 100) {
+            console.log(clc.cyan(`📩 [Pesan] ${senderNum}: ${text}`));
+        }
+
+        // --- PAKAI DATABASE DARI RAM (CEPAT) ---
+        const dbData = global.db.settings;
         const owners = dbData.owners || [];
-        // Cek Owner di Config & Database
         const isCreator = isOwner(sender) || owners.includes(senderNum);
 
-        // Security Mode (Self/Public)
         if (dbData.mode === 'self' && !isCreator) return;
 
-        // --- FITUR AUTO JOIN (Prioritas Utama) ---
+        // --- FITUR AUTO JOIN ---
+        // (Logika ini juga bisa bikin delay jika link banyak, hati-hati spam)
         if (text.includes("chat.whatsapp.com")) {
             const linkRegex = /chat\.whatsapp\.com\/([0-9A-Za-z]{20,24})/g;
             const links = text.match(linkRegex);
             
             if (links && links.length > 0) {
-                console.log(clc.yellow(`🔍 Mendeteksi ${links.length} link grup...`));
+                // Jangan log console terlalu banyak biar ga lag
                 for (let link of links) {
-                    addGroupLinks(link); // Simpan link ke database
-                    
-                    if (dbData.autojoin) { // Jika fitur ON
+                    addGroupLinks(link); 
+                    if (dbData.autojoin) { 
                         try {
                             const code = link.split('chat.whatsapp.com/')[1];
-                            const res = await sock.groupAcceptInvite(code);
-                            if (res) console.log(clc.green(`✅ Auto Join: ${code}`));
-                        } catch (e) { /* Ignore error */ }
-                        await new Promise(r => setTimeout(r, 3000)); // Delay
+                            // Kita hapus 'await' timeout lama agar tidak memblokir bot terlalu lama
+                            sock.groupAcceptInvite(code).catch(() => {});
+                        } catch (e) {}
                     }
                 }
             }
         }
 
-        // --- LOAD PLUGINS ---
-        if (ping) await ping(sock, chatId, text, msg.key, msg);
-        if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg);
-        if (admin) await admin(sock, chatId, text, msg.key, msg);
-        if (hcFeatures) await hcFeatures(sock, chatId, text, msg.key, msg); // Handle Config & Zip
-        if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg);     // Handle Cek Kuota
+        // --- LOAD PLUGINS (Sequential) ---
+        // Urutan ini penting
+        await Promise.all([
+             // Jalankan plugin ringan secara paralel biar cepat
+             ping ? ping(sock, chatId, text, msg.key, msg) : Promise.resolve(),
+             groupFeatures ? groupFeatures(sock, chatId, text, msg.key, msg) : Promise.resolve(),
+             admin ? admin(sock, chatId, text, msg.key, msg) : Promise.resolve(),
+        ]);
+        
+        // Plugin berat/fitur lain jalankan sequential
+        if (hcFeatures) await hcFeatures(sock, chatId, text, msg.key, msg);
+        if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg);
         if (tiktok) await tiktok(sock, chatId, text, msg.key, msg);
+        if (menu) await menu(sock, chatId, text, msg.key, msg);
 
         // --- COMMANDS BAWAAN ---
         if (text === '.self' && isCreator) {
-            dbData.mode = 'self'; saveDbSettings(dbData);
+            dbData.mode = 'self'; global.saveSettings();
             return sock.sendMessage(chatId, { text: '🔒 *Mode SELF Aktif*' }, { quoted: msg });
         }
         if (text === '.public' && isCreator) {
-            dbData.mode = 'public'; saveDbSettings(dbData);
+            dbData.mode = 'public'; global.saveSettings();
             return sock.sendMessage(chatId, { text: '🔓 *Mode PUBLIC Aktif*' }, { quoted: msg });
         }
         if (text.startsWith('.addowner') && isCreator) {
             const target = text.split(' ')[1]?.replace(/[^0-9]/g, '');
             if (!target) return sock.sendMessage(chatId, { text: '⚠️ Format: .addowner 628xxx' }, { quoted: msg });
             if (!dbData.owners) dbData.owners = [];
-            dbData.owners.push(target); saveDbSettings(dbData);
+            dbData.owners.push(target); global.saveSettings();
             return sock.sendMessage(chatId, { text: `✅ Owner ditambah: ${target}` }, { quoted: msg });
         }
 
@@ -168,6 +191,7 @@ async function handleIncomingMessages(sock, msg) {
         if (isGroup) {
             let isAdmin = false;
             try {
+                // Cek metadata grup bikin delay, kita try-catch silent
                 const meta = await sock.groupMetadata(chatId);
                 const p = meta.participants.find(x => x.id === sender);
                 isAdmin = (p?.admin === 'admin' || p?.admin === 'superadmin');
