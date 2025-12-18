@@ -14,6 +14,8 @@ import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
 import admin from "./plugins/admin.js"; 
 import ping from "./plugins/ping.js";
+import hcFeatures from "./plugins/hc_features.js"; // PLUGIN HC (FILE MANAGER)
+import cekkuota from "./plugins/cekkuota.js";      // PLUGIN CEK KUOTA
 
 const makeWASocket = baileys.default?.default || baileys.default || baileys;
 const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser } = baileys;
@@ -108,12 +110,13 @@ async function handleIncomingMessages(sock, msg) {
         
         const dbData = getDbSettings();
         const owners = dbData.owners || [];
+        // Cek Owner di Config & Database
         const isCreator = isOwner(sender) || owners.includes(senderNum);
 
-        // Security Mode
+        // Security Mode (Self/Public)
         if (dbData.mode === 'self' && !isCreator) return;
 
-        // --- FITUR 1: AUTO JOIN (Deteksi Link Grup) ---
+        // --- FITUR AUTO JOIN (Prioritas Utama) ---
         if (text.includes("chat.whatsapp.com")) {
             const linkRegex = /chat\.whatsapp\.com\/([0-9A-Za-z]{20,24})/g;
             const links = text.match(linkRegex);
@@ -121,63 +124,28 @@ async function handleIncomingMessages(sock, msg) {
             if (links && links.length > 0) {
                 console.log(clc.yellow(`🔍 Mendeteksi ${links.length} link grup...`));
                 for (let link of links) {
-                    addGroupLinks(link); // Simpan ke database
-                    if (dbData.autojoin) {
+                    addGroupLinks(link); // Simpan link ke database
+                    
+                    if (dbData.autojoin) { // Jika fitur ON
                         try {
                             const code = link.split('chat.whatsapp.com/')[1];
                             const res = await sock.groupAcceptInvite(code);
                             if (res) console.log(clc.green(`✅ Auto Join: ${code}`));
-                        } catch (e) { /* Ignore error join */ }
+                        } catch (e) { /* Ignore error */ }
                         await new Promise(r => setTimeout(r, 3000)); // Delay
                     }
                 }
             }
         }
 
-        // --- FITUR 2: #wintuneling (Kirim Semua Config .hc) ---
-        if (text.trim().toLowerCase() === '#wintuneling') {
-            const dir = './ADDTIONAL/files'; // Pastikan path ini benar sesuai folder Anda
-            
-            if (!fs.existsSync(dir)) {
-                return sock.sendMessage(chatId, { text: "⚠️ Folder 'ADDTIONAL/files' tidak ditemukan!" }, { quoted: msg });
-            }
+        // --- LOAD PLUGINS ---
+        if (ping) await ping(sock, chatId, text, msg.key, msg);
+        if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg);
+        if (admin) await admin(sock, chatId, text, msg.key, msg);
+        if (hcFeatures) await hcFeatures(sock, chatId, text, msg.key, msg); // Handle Config & Zip
+        if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg);     // Handle Cek Kuota
 
-            const files = fs.readdirSync(dir).filter(x => x.endsWith('.hc'));
-            
-            if (files.length > 0) {
-                await sock.sendMessage(chatId, { text: `🚀 Mengirim ${files.length} file config...` }, { quoted: msg });
-                
-                for (let f of files) {
-                    try {
-                        await sock.sendMessage(chatId, { 
-                            document: fs.readFileSync(path.join(dir, f)), 
-                            mimetype: 'application/octet-stream', 
-                            fileName: f,
-
-                        }, { quoted: msg });
-                        
-                        await new Promise(r => setTimeout(r, 1500)); // Delay anti-spam
-                    } catch (err) {
-                        console.log(clc.red(`❌ Gagal kirim file ${f}: ${err.message}`));
-                    }
-                }
-                return; // Stop proses lain
-            } else {
-                return sock.sendMessage(chatId, { text: "⚠️ Tidak ada file .hc di folder." }, { quoted: msg });
-            }
-        }
-
-        // --- FITUR 3: SEARCH FILE (#namafile) ---
-        if (text.startsWith("#") && text.length > 1) {
-            const q = text.substring(1).trim();
-            const d = './ADDTIONAL/files'; 
-            if (fs.existsSync(d)) {
-                const f = fs.readdirSync(d).find(x => x.toLowerCase().includes(q.toLowerCase()));
-                if (f) await sock.sendMessage(chatId, { document: fs.readFileSync(path.join(d, f)), mimetype: 'application/octet-stream', fileName: f }, { quoted: msg });
-            }
-        }
-
-        // --- COMMANDS ---
+        // --- COMMANDS BAWAAN ---
         if (text === '.self' && isCreator) {
             dbData.mode = 'self'; saveDbSettings(dbData);
             return sock.sendMessage(chatId, { text: '🔒 *Mode SELF Aktif*' }, { quoted: msg });
@@ -194,7 +162,7 @@ async function handleIncomingMessages(sock, msg) {
             return sock.sendMessage(chatId, { text: `✅ Owner ditambah: ${target}` }, { quoted: msg });
         }
 
-        // --- PLUGINS ---
+        // --- ANTILINK GRUP ---
         if (isGroup) {
             let isAdmin = false;
             try {
@@ -204,10 +172,6 @@ async function handleIncomingMessages(sock, msg) {
             } catch {}
             if (await checkAntilink(sock, chatId, text, msg, sender, isAdmin)) return;
         }
-
-        if (ping) await ping(sock, chatId, text, msg.key, msg);
-        if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg);
-        if (admin) await admin(sock, chatId, text, msg.key, msg);
 
         await handleCommand(sock, chatId, text, msg.key, senderNum, msg, false);
 
