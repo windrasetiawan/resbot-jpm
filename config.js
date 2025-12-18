@@ -7,9 +7,9 @@ if (!fs.existsSync('./DATABASE')) {
 
 const ownerPath = './DATABASE/owner.json';
 
-// --- BAGIAN INI SAYA UBAH SESUAI LOG KAMU ---
-// Nomor 49697553178765 diambil dari log "Akses ditolak" yang kamu kirim
-let ownerData = ["49697553178765"]; 
+// --- BAGIAN INI SUDAH DIPERBAIKI ---
+// GANTI '628xxxxxxxxxx' DENGAN NOMOR WA ANDA SENDIRI
+let ownerData = ["6285921645742"]; 
 
 // Kita paksa tulis ulang database agar nomor ini langsung aktif
 try {
