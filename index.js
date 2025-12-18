@@ -16,6 +16,7 @@ import admin from "./plugins/admin.js";
 import ping from "./plugins/ping.js";
 import hcFeatures from "./plugins/hc_features.js"; // PLUGIN HC (FILE MANAGER)
 import cekkuota from "./plugins/cekkuota.js";      // PLUGIN CEK KUOTA
+import tiktok from "./plugins/tiktok.js";
 
 const makeWASocket = baileys.default?.default || baileys.default || baileys;
 const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser } = baileys;
@@ -144,6 +145,7 @@ async function handleIncomingMessages(sock, msg) {
         if (admin) await admin(sock, chatId, text, msg.key, msg);
         if (hcFeatures) await hcFeatures(sock, chatId, text, msg.key, msg); // Handle Config & Zip
         if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg);     // Handle Cek Kuota
+        if (tiktok) await tiktok(sock, chatId, text, msg.key, msg);
 
         // --- COMMANDS BAWAAN ---
         if (text === '.self' && isCreator) {
