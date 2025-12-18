@@ -1,6 +1,6 @@
 import fs from "fs";
 import { isOwner } from "../lib/utils.js";
-import { saveOwner } from "../config.js";
+// saveOwner dihapus karena fitur addowner sudah tidak di sini
 
 const settingsPath = './DATABASE/settings.json';
 const schedulePath = './DATABASE/group_schedule.json';
@@ -14,12 +14,17 @@ global.antilinkData = global.antilinkData || {
 
 // Helper Load Database
 const getSettings = () => {
-    if (!fs.existsSync(settingsPath)) return { mode: 'self', antilink: [], autojoin: false };
-    return JSON.parse(fs.readFileSync(settingsPath));
+    try {
+        if (!fs.existsSync(settingsPath)) return { mode: 'self', antilink: [], autojoin: false };
+        return JSON.parse(fs.readFileSync(settingsPath));
+    } catch { return {}; }
 };
 const saveSettings = (data) => fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2));
 
-if (!fs.existsSync(schedulePath)) fs.writeFileSync(schedulePath, JSON.stringify({}));
+if (!fs.existsSync(schedulePath)) {
+    if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE', { recursive: true });
+    fs.writeFileSync(schedulePath, JSON.stringify({}));
+}
 
 
 // ==========================================
@@ -36,13 +41,12 @@ export async function checkAntilink(sock, chatId, message, msg, sender, isAdmin)
 
     // 2. Cek apakah fitur Antilink aktif di grup ini
     let db = getSettings();
-    if (!db.antilink.includes(chatId)) return false;
+    if (!db.antilink || !db.antilink.includes(chatId)) return false;
 
     // 3. Admin & Owner bebas kirim link
     if (isAdmin || isOwner(sender)) return false;
 
     // 4. Cek Link Grup WhatsApp
-    // .test() memastikan 1 pesan dihitung 1 kali saja (meski isi 10 link)
     const linkRegex = /chat.whatsapp.com\/([0-9A-Za-z]{20,24})/i;
     const isLink = linkRegex.test(message); 
 
@@ -58,12 +62,8 @@ export async function checkAntilink(sock, chatId, message, msg, sender, isAdmin)
         // --- LOGIKA HUKUMAN BERTAHAP ---
         if (count >= 3) {
             // == PELANGGARAN KE-3 (ACTION: DELETE + WARNING) ==
-            
-            // 1. Hapus Pesan
             try { await sock.sendMessage(chatId, { delete: msg.key }); } catch {}
 
-            // 2. Kirim Peringatan
-            // Kita cek agar bot tidak spam warning
             await sock.sendMessage(chatId, { 
                 text: `⚠️ *PROMOSI 2X AJA BRO*\n\n@${sender.split('@')[0]} Promosi jangan banyak banyak bang ulang besok lagi`,
                 mentions: [sender]
@@ -73,10 +73,7 @@ export async function checkAntilink(sock, chatId, message, msg, sender, isAdmin)
 
         } else {
             // == PELANGGARAN KE-1 & KE-2 (ALLOW / BIARKAN) ==
-            // Pesan TETAP MUNCUL (Tidak dihapus)
-            // Hanya dicatat di console log untuk monitoring
             console.log(`[ANTILINK] ${sender.split('@')[0]} Promosi ke-${count} (Dibiarkan)`);
-            
             return false; // Lanjut proses (pesan tidak dihapus)
         }
     }
@@ -93,35 +90,50 @@ async function groupFeatures(sock, chatId, message, key, msg) {
     
     if (!message) return;
     const parts = message.trim().split(" ");
-    const command = parts[0]?.toLowerCase().substring(1);
-    const q = parts.slice(1).join(" ");
-
-    // --- AUTOJOIN ---
-    if (command === "autojoin") {
-        if (!isOwner(sender)) return sock.sendMessage(chatId, { text: "❌ Khusus Owner!" }, { quoted: msg });
-
-        let db = getSettings();
-        if (!q) {
-            let status = db.autojoin ? "✅ AKTIF" : "⭕ MATI";
-            return sock.sendMessage(chatId, { text: `🤖 *AUTO JOIN GLOBAL*\nStatus: ${status}\n\nCara: .autojoin on/off` }, { quoted: msg });
-        }
-        if (q === "on") { db.autojoin = true; saveSettings(db); return sock.sendMessage(chatId, { text: "✅ Auto Join ON" }, { quoted: msg }); }
-        else if (q === "off") { db.autojoin = false; saveSettings(db); return sock.sendMessage(chatId, { text: "⭕ Auto Join OFF" }, { quoted: msg }); }
+    let command = parts[0]?.toLowerCase();
+    
+    // Support prefix . atau #
+    if (command.startsWith(".") || command.startsWith("#")) {
+        command = command.substring(1);
     }
+    
+    const args = parts.slice(1);
+    const q = args.join(" ");
+
+    // Cek Admin Bot (untuk fitur open/close)
+    let isBotAdmin = false;
+    try {
+        const meta = await sock.groupMetadata(chatId);
+        const bot = meta.participants.find(x => x.id === sock.user.id.split(':')[0] + '@s.whatsapp.net');
+        isBotAdmin = (bot?.admin === 'admin' || bot?.admin === 'superadmin');
+    } catch {}
+    
+    // Cek Admin Pengirim (untuk validasi akses)
+    let isAdmin = false;
+    try {
+        const meta = await sock.groupMetadata(chatId);
+        const p = meta.participants.find(x => x.id === sender);
+        isAdmin = (p?.admin === 'admin' || p?.admin === 'superadmin');
+    } catch {}
+
+    // [DIHAPUS] .autojoin (Sudah ada di admin.js)
 
     // --- ANTILINK SETTING ---
     if (command === "antilink") {
         if (!isGroup) return sock.sendMessage(chatId, { text: "❌ Hanya untuk grup!" }, { quoted: msg });
+        if (!isAdmin) return sock.sendMessage(chatId, { text: "❌ Khusus Admin Grup!" }, { quoted: msg });
         
         let db = getSettings();
-        if (q === "on") {
+        if (!db.antilink) db.antilink = [];
+
+        if (args[0] === "on") {
             if (db.antilink.includes(chatId)) return sock.sendMessage(chatId, { text: "⚠️ Sudah ON." }, { quoted: msg });
             db.antilink.push(chatId);
             saveSettings(db);
             return sock.sendMessage(chatId, { 
                 text: "✅ *Antilink ON*\n\nAturan:\n- PROMOSI MAX 2X DALAM SEHARI JIKA MELEBIHI BATAS AKAN DI HAPUS OTOMATIS!!" 
             }, { quoted: msg });
-        } else if (q === "off") {
+        } else if (args[0] === "off") {
             db.antilink = db.antilink.filter(id => id !== chatId);
             saveSettings(db);
             return sock.sendMessage(chatId, { text: "⭕ Antilink OFF" }, { quoted: msg });
@@ -130,24 +142,30 @@ async function groupFeatures(sock, chatId, message, key, msg) {
         }
     }
 
-    // --- ADD OWNER ---
-    if (command === "addowner") {
-         if (!isOwner(sender)) return sock.sendMessage(chatId, { text: "❌ Khusus Owner!" }, { quoted: msg });
-         if (saveOwner(q)) return sock.sendMessage(chatId, { text: `✅ Owner ditambahkan: ${q}` }, { quoted: msg });
-         else return sock.sendMessage(chatId, { text: "❌ Gagal." }, { quoted: msg });
-    }
+    // [DIHAPUS] .addowner (Sudah ada di index.js)
 
     // --- GROUP OPEN/CLOSE ---
-    if ((command === "open" || command === "close") && isGroup) {
-        try {
-            await sock.groupSettingUpdate(chatId, command === "close" ? "announcement" : "not_announcement");
-            return sock.sendMessage(chatId, { text: `✅ Grup di-${command}.` });
-        } catch {
-            return sock.sendMessage(chatId, { text: "❌ Bot bukan admin!" });
+    if ((command === "open" || command === "close" || command === "grup" || command === "group") && isGroup) {
+        if (!isAdmin) return sock.sendMessage(chatId, { text: "❌ Khusus Admin Grup!" }, { quoted: msg });
+        if (!isBotAdmin) return sock.sendMessage(chatId, { text: "❌ Bot bukan Admin!" }, { quoted: msg });
+
+        // Handle variasi command
+        let action = command;
+        if (command === "grup" || command === "group") action = args[0];
+
+        if (action === "close") {
+            await sock.groupSettingUpdate(chatId, 'announcement');
+            return sock.sendMessage(chatId, { text: "🔒 Grup Ditutup." });
+        } else if (action === "open") {
+            await sock.groupSettingUpdate(chatId, 'not_announcement');
+            return sock.sendMessage(chatId, { text: "🔓 Grup Dibuka." });
         }
     }
 
+    // --- SET JADWAL ---
     if ((command === "setopen" || command === "setclose") && isGroup) {
+        if (!isAdmin) return sock.sendMessage(chatId, { text: "❌ Khusus Admin Grup!" }, { quoted: msg });
+
         if (!q.match(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)) {
             return sock.sendMessage(chatId, { text: "⚠️ Format salah. Contoh: .setclose 22:00" });
         }
