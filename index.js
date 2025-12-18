@@ -152,7 +152,7 @@ async function handleIncomingMessages(sock, msg) {
         }
         if (text.startsWith('.addowner') && isCreator) {
             const target = text.split(' ')[1]?.replace(/[^0-9]/g, '');
-            if (!target) return sock.sendMessage(chatId, { text: '⚠️ Masukkan nomor.' }, { quoted: msg });
+            if (!target) return sock.sendMessage(chatId, { text: '⚠️ Masukkan nomor owner\nContoh: *.addowner 6287xxx*.' }, { quoted: msg });
             if (!dbData.owners) dbData.owners = [];
             dbData.owners.push(target); saveDbSettings(dbData);
             return sock.sendMessage(chatId, { text: `✅ Owner ditambah: ${target}` }, { quoted: msg });
@@ -185,7 +185,7 @@ async function handleIncomingMessages(sock, msg) {
         // --- FEATURES ---
         if (text.startsWith('.cekkuota') || text.startsWith('.cekxl')) {
             const args = text.split(" ").slice(1);
-            if (!args[0]) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor XL/Axis!\nContoh: *.cekkuota 62878xxxx*." }, { quoted: msg });
+            if (!args[0]) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor XL/Axis!\nContoh: *.cekxl 62878xxxx*." }, { quoted: msg });
             const msisdn = args[0].replace(/[^0-9]/g, '');
             await sock.sendMessage(chatId, { text: "⏳ Mengambil data..." }, { quoted: msg });
             try {
