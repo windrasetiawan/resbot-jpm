@@ -87,8 +87,6 @@ async function menu(sock, chatId, message, key, msg) {
 
 ╭─「 🛡️ *GROUP SETTING* 」
 │ ➤ .antilink on/off
-│ ➤ .hidetag <teks>
-│ ➤ .kick <reply/tag>
 │ ➤ .add <nomor>
 │ ➤ .group open/close
 │ ➤ .setclose / .setopen <jam>
