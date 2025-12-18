@@ -16,8 +16,7 @@ import admin from "./plugins/admin.js";
 import ping from "./plugins/ping.js";
 import hcFeatures from "./plugins/hc_features.js"; 
 import cekkuota from "./plugins/cekkuota.js";      
-import tiktok from "./plugins/tiktok.js"; 
-import menu from "./plugins/menu.js";     
+// [DIHAPUS] import tiktok dan menu manual agar tidak bentrok dengan auto-loader
 
 const makeWASocket = baileys.default?.default || baileys.default || baileys;
 const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser } = baileys;
@@ -25,7 +24,6 @@ const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidN
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // --- [OPTIMASI] DATABASE SYSTEM (MEMORY CACHE) ---
-// Bot hanya baca file 1x saat start, selanjutnya baca dari RAM
 const pathSettings = './DATABASE/settings.json';
 global.db = { settings: {} };
 
@@ -41,7 +39,6 @@ if (!fs.existsSync(pathSettings)) {
     }
 }
 
-// Fungsi Simpan (Hanya dipanggil saat ada perubahan)
 global.saveSettings = () => {
     fs.writeFileSync(pathSettings, JSON.stringify(global.db.settings, null, 2));
 };
@@ -65,7 +62,6 @@ async function connectToWhatsApp() {
         printQRInTerminal: false,
         browser: ["Ubuntu", "Chrome", "20.0.04"],
         generateHighQualityLinkPreview: true,
-        // Optimasi Socket
         syncFullHistory: false, 
         markOnlineOnConnect: false 
     });
@@ -122,12 +118,10 @@ async function handleIncomingMessages(sock, msg) {
                      msg.message?.imageMessage?.caption || 
                      msg.message?.videoMessage?.caption || "";
 
-        // Log Pesan (Hanya tampilkan jika bukan pesan sistem)
         if (text && text.length < 100) {
             console.log(clc.cyan(`📩 [Pesan] ${senderNum}: ${text}`));
         }
 
-        // --- PAKAI DATABASE DARI RAM (CEPAT) ---
         const dbData = global.db.settings;
         const owners = dbData.owners || [];
         const isCreator = isOwner(sender) || owners.includes(senderNum);
@@ -135,19 +129,16 @@ async function handleIncomingMessages(sock, msg) {
         if (dbData.mode === 'self' && !isCreator) return;
 
         // --- FITUR AUTO JOIN ---
-        // (Logika ini juga bisa bikin delay jika link banyak, hati-hati spam)
         if (text.includes("chat.whatsapp.com")) {
             const linkRegex = /chat\.whatsapp\.com\/([0-9A-Za-z]{20,24})/g;
             const links = text.match(linkRegex);
             
             if (links && links.length > 0) {
-                // Jangan log console terlalu banyak biar ga lag
                 for (let link of links) {
                     addGroupLinks(link); 
                     if (dbData.autojoin) { 
                         try {
                             const code = link.split('chat.whatsapp.com/')[1];
-                            // Kita hapus 'await' timeout lama agar tidak memblokir bot terlalu lama
                             sock.groupAcceptInvite(code).catch(() => {});
                         } catch (e) {}
                     }
@@ -155,20 +146,19 @@ async function handleIncomingMessages(sock, msg) {
             }
         }
 
-        // --- LOAD PLUGINS (Sequential) ---
-        // Urutan ini penting
+        // --- LOAD PLUGINS ---
         await Promise.all([
-             // Jalankan plugin ringan secara paralel biar cepat
              ping ? ping(sock, chatId, text, msg.key, msg) : Promise.resolve(),
              groupFeatures ? groupFeatures(sock, chatId, text, msg.key, msg) : Promise.resolve(),
              admin ? admin(sock, chatId, text, msg.key, msg) : Promise.resolve(),
         ]);
         
-        // Plugin berat/fitur lain jalankan sequential
+        // Plugin berat
         if (hcFeatures) await hcFeatures(sock, chatId, text, msg.key, msg);
         if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg);
-        if (tiktok) await tiktok(sock, chatId, text, msg.key, msg);
-        if (menu) await menu(sock, chatId, text, msg.key, msg);
+        
+        // [PERBAIKAN] HAPUS call manual tiktok & menu. 
+        // Biarkan `handleCommand` di bawah yang mengurusnya secara otomatis.
 
         // --- COMMANDS BAWAAN ---
         if (text === '.self' && isCreator) {
@@ -191,7 +181,6 @@ async function handleIncomingMessages(sock, msg) {
         if (isGroup) {
             let isAdmin = false;
             try {
-                // Cek metadata grup bikin delay, kita try-catch silent
                 const meta = await sock.groupMetadata(chatId);
                 const p = meta.participants.find(x => x.id === sender);
                 isAdmin = (p?.admin === 'admin' || p?.admin === 'superadmin');
@@ -199,6 +188,7 @@ async function handleIncomingMessages(sock, msg) {
             if (await checkAntilink(sock, chatId, text, msg, sender, isAdmin)) return;
         }
 
+        // AUTO-LOADER PLUGIN (Ini yang akan menjalankan tiktok.js, menu.js, dll)
         await handleCommand(sock, chatId, text, msg.key, senderNum, msg, false);
 
     } catch (e) { console.error("Msg Error:", e); }
