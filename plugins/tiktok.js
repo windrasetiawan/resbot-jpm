@@ -11,7 +11,7 @@ async function tiktok(sock, chatId, message, key, msg) {
     const args = parts.slice(1);
 
     // Command yang dikenali
-    if (command === "tiktok" || command === "tt") {
+    if (command === "tt") {
         if (!args[0]) {
             return sock.sendMessage(chatId, { text: "⚠️ Masukkan link TikTok!\nContoh: *.tt https://vt.tiktok.com/xxxx*" }, { quoted: msg });
         }
