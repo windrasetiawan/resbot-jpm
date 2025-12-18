@@ -101,6 +101,10 @@ async function menu(sock, chatId, message, key, msg) {
 │ ➤ #wintuneling (semua config)
 │ ➤ #<namafile> (ambil satu)
 ╰──────────────────
+╭──────────────────
+│ 😘 *JANGAN LUPA SHOLAT*
+│ ⛔️ *STOP JUDI ONLINE MEMBUATMU MISKIN*
+╰───────────────────
 `;
 
         // Mengirim pesan menu
