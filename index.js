@@ -6,12 +6,12 @@ import clc from "cli-color";
 import readline from "readline";
 import * as baileys from "baileys";
 
-// IMPORT HELPERS
+// --- IMPORT LIB & PLUGINS ---
 import { ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; 
 import { addGroupLinks } from "./lib/grupLinkStore.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
-// IMPORT PLUGINS (MANUAL)
+// DAFTAR PLUGIN
 import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
 import admin from "./plugins/admin.js"; 
 import ping from "./plugins/ping.js";
@@ -27,34 +27,25 @@ const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidN
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ==============================================
-//  DATABASE SYSTEM (GLOBAL MEMORY)
+//  DATABASE SYSTEM
 // ==============================================
 const pathSettings = './DATABASE/settings.json';
 global.db = { settings: {} };
 
-// Load Database saat Start
+// Load Database
 if (!fs.existsSync(pathSettings)) {
     if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE', { recursive: true }); 
     global.db.settings = { mode: 'public', antilink: [], autojoin: false, owners: [] };
     fs.writeFileSync(pathSettings, JSON.stringify(global.db.settings, null, 2));
 } else {
-    try {
-        global.db.settings = JSON.parse(fs.readFileSync(pathSettings));
-    } catch {
-        global.db.settings = { mode: 'public', antilink: [], autojoin: false, owners: [] };
-    }
+    try { global.db.settings = JSON.parse(fs.readFileSync(pathSettings)); } catch { global.db.settings = { mode: 'public', antilink: [], autojoin: false, owners: [] }; }
 }
 
-// Fungsi Simpan (Dipanggil oleh plugin)
-global.saveSettings = () => {
-    fs.writeFileSync(pathSettings, JSON.stringify(global.db.settings, null, 2));
-};
+global.saveSettings = () => fs.writeFileSync(pathSettings, JSON.stringify(global.db.settings, null, 2));
 
 const question = (text) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    return new Promise((resolve) => {
-        rl.question(text, (answer) => { rl.close(); resolve(answer); });
-    });
+    return new Promise((resolve) => { rl.question(text, (answer) => { rl.close(); resolve(answer); }); });
 };
 
 async function connectToWhatsApp() {
@@ -80,9 +71,7 @@ async function connectToWhatsApp() {
                 try {
                     const code = await sock.requestPairingCode(phoneNumber.trim());
                     console.log(clc.green.bold(`🔗 KODE PAIRING: ${code?.match(/.{1,4}/g)?.join("-") || code}`));
-                } catch (e) {
-                    console.error(clc.red("Gagal request pairing code."), e);
-                }
+                } catch (e) { console.error(clc.red("Gagal request pairing code."), e); }
             }
         }, 3000);
     }
@@ -97,6 +86,7 @@ async function connectToWhatsApp() {
             console.log(clc.green("✅ Terhubung!"));
             ChangeStatus(`${__dirname}/sessions/`, "connected");
             resumeAutoJPM(sock);
+            startGroupScheduler(sock); // [PENTING] Jalankan Scheduler
         }
     });
 
@@ -107,6 +97,43 @@ async function connectToWhatsApp() {
     });
      
     sock.ev.on("creds.update", saveCreds);
+}
+
+// [FITUR TAMBAHAN] SCHEDULER OPEN/CLOSE GRUP
+let lastCheckMinute = "";
+function startGroupScheduler(sock) {
+    const schedulePath = './DATABASE/group_schedule.json';
+    
+    // Cek setiap 10 detik
+    setInterval(async () => {
+        const now = new Date();
+        // Format jam HH:MM
+        const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+        // Cek agar tidak spam (Hanya jalan sekali per menit saat menit berubah)
+        if (currentTime === lastCheckMinute) return;
+        lastCheckMinute = currentTime;
+
+        if (!fs.existsSync(schedulePath)) return;
+        
+        try {
+            const db = JSON.parse(fs.readFileSync(schedulePath));
+            for (const [chatId, schedule] of Object.entries(db)) {
+                // Cek Jadwal Buka
+                if (schedule.open === currentTime) {
+                    await sock.groupSettingUpdate(chatId, 'not_announcement');
+                    await sock.sendMessage(chatId, { text: "🔓 *Waktunya Grup Dibuka!*" });
+                }
+                // Cek Jadwal Tutup
+                if (schedule.close === currentTime) {
+                    await sock.groupSettingUpdate(chatId, 'announcement');
+                    await sock.sendMessage(chatId, { text: "🔒 *Waktunya Grup Ditutup!*" });
+                }
+            }
+        } catch (e) {
+            console.error("Error Scheduler:", e);
+        }
+    }, 10000); 
 }
 
 async function handleIncomingMessages(sock, msg) {
@@ -124,26 +151,21 @@ async function handleIncomingMessages(sock, msg) {
                      msg.message?.imageMessage?.caption || 
                      msg.message?.videoMessage?.caption || "";
 
-        if (text && text.length < 100) {
-            console.log(clc.cyan(`📩 [Pesan] ${senderNum}: ${text}`));
-        }
+        if (text && text.length < 100) console.log(clc.cyan(`📩 [Pesan] ${senderNum}: ${text}`));
 
-        // --- GLOBAL VARIABLES FOR PLUGINS ---
         const dbData = global.db.settings;
         const owners = dbData.owners || [];
         const isCreator = isOwner(sender) || owners.includes(senderNum);
 
-        // Security: Mode Self (Hanya Owner yang bisa akses)
         if (dbData.mode === 'self' && !isCreator) return;
 
-        // --- 1. FITUR AUTO JOIN (Global Check) ---
+        // --- 1. FITUR AUTO JOIN ---
         if (text.includes("chat.whatsapp.com")) {
             const linkRegex = /chat\.whatsapp\.com\/([0-9A-Za-z]{20,24})/g;
             const links = text.match(linkRegex);
             if (links && links.length > 0) {
                 for (let link of links) {
-                    addGroupLinks(link); // Simpan link ke database
-                    
+                    addGroupLinks(link); 
                     if (dbData.autojoin) { 
                         try {
                             const code = link.split('chat.whatsapp.com/')[1];
@@ -164,15 +186,10 @@ async function handleIncomingMessages(sock, msg) {
                 const p = meta.participants.find(x => x.id === sender);
                 isAdmin = (p?.admin === 'admin' || p?.admin === 'superadmin');
             } catch {}
-            
-            // Jika terdeteksi link, stop proses (return)
             if (await checkAntilink(sock, chatId, text, msg, sender, isAdmin)) return;
         }
 
-        // --- 3. EKSEKUSI PLUGINS (MANUAL URUTAN) ---
-        // Kita panggil satu per satu agar tidak bentrok.
-        // Try-Catch digunakan agar jika satu plugin error, bot tidak mati.
-
+        // --- 3. EKSEKUSI PLUGINS ---
         try { if (ping) await ping(sock, chatId, text, msg.key, msg); } catch(e) {}
         try { if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg); } catch(e) {}
         try { if (admin) await admin(sock, chatId, text, msg.key, msg); } catch(e) {}
@@ -182,8 +199,7 @@ async function handleIncomingMessages(sock, msg) {
         try { if (instagram) await instagram(sock, chatId, text, msg.key, msg); } catch(e) {}
         try { if (menu) await menu(sock, chatId, text, msg.key, msg); } catch(e) {}
 
-        // --- 4. COMMAND DARURAT (Add Owner & Mode) ---
-        // Ini backup jika plugin admin bermasalah
+        // --- 4. COMMAND BAWAAN ---
         if (text === '.self' && isCreator) {
             dbData.mode = 'self'; global.saveSettings();
             return sock.sendMessage(chatId, { text: '🔒 *Mode SELF Aktif*' }, { quoted: msg });
