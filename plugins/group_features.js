@@ -9,6 +9,7 @@ global.antilinkData = global.antilinkData || {
     users: {} 
 };
 
+// Pastikan file jadwal ada
 if (!fs.existsSync(schedulePath)) {
     if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE', { recursive: true });
     fs.writeFileSync(schedulePath, JSON.stringify({}));
@@ -79,7 +80,7 @@ async function groupFeatures(sock, chatId, message, key, msg) {
         }
     }
 
-    // Open/Close
+    // Open/Close Manual
     if (command === "open" && isAdmin) {
         await sock.groupSettingUpdate(chatId, 'not_announcement');
         return sock.sendMessage(chatId, { text: "🔓 Grup Dibuka" });
@@ -87,6 +88,22 @@ async function groupFeatures(sock, chatId, message, key, msg) {
     if (command === "close" && isAdmin) {
         await sock.groupSettingUpdate(chatId, 'announcement');
         return sock.sendMessage(chatId, { text: "🔒 Grup Ditutup" });
+    }
+
+    // [DITAMBAHKAN] SET JADWAL GROUP (Hanya Fitur Ini)
+    if ((command === "setopen" || command === "setclose") && isAdmin) {
+        if (!q.match(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)) {
+            return sock.sendMessage(chatId, { text: "⚠️ Format salah! Contoh: *.setclose 22:00*" }, { quoted: msg });
+        }
+
+        const db = JSON.parse(fs.readFileSync(schedulePath));
+        if (!db[chatId]) db[chatId] = {};
+        
+        const type = command === "setopen" ? "open" : "close";
+        db[chatId][type] = q;
+        
+        fs.writeFileSync(schedulePath, JSON.stringify(db, null, 2));
+        return sock.sendMessage(chatId, { text: `✅ Jadwal ${type} grup diatur ke jam ${q}` }, { quoted: msg });
     }
 
     // Hidetag
