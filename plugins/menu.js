@@ -81,6 +81,7 @@ async function menu(sock, chatId, text, key, messageEvent) {
 
 ╭─「 📂 *DATABASE* 」
 │ ➤ .listhc
+│ ➤ #wintuneling (semua config .hc)
 │ ➤ #<namafile>
 ╰──────────────────
 `;
