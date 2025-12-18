@@ -75,7 +75,7 @@ async function menu(sock, chatId, message, key, msg) {
 
 ╭─「 📡 *UTILITY* 」
 │ ➤ .cekkuota <nomor>
-│ ➤ .tiktok <link>
+│ ➤ .tt <link>
 │ ➤ .ig <link>
 │ ➤ .ping
 │ ➤ .menu
