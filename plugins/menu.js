@@ -104,7 +104,7 @@ async function menu(sock, chatId, message, key, msg) {
 ╰──────────────────
 ╭──────────────────
 │ 😘 *JANGAN LUPA SHOLAT*
-│ ⛔️ *STOP JUDI ONLINE MEMBUATMU MISKIN*
+│ ⛔️ *STOP JUDOL BUATMU MISKIN*
 ╰───────────────────
 `;
 
