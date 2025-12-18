@@ -3,14 +3,12 @@ import path from "path";
 import AdmZip from "adm-zip"; 
 import { downloadAndSaveMedia, isOwner } from "../lib/utils.js";
 
-// KONFIGURASI FOLDER
+// FOLDER UTAMA
 const targetDir = "./ADDTIONAL/files";
 const tempDir = "./tmp_extract"; 
 
-// Pastikan folder ada
 if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
-// Helper: Cari file .hc secara rekursif
 function findHcFiles(dir, fileList = []) {
     const files = fs.readdirSync(dir);
     files.forEach(file => {
@@ -31,7 +29,6 @@ async function hcFeatures(sock, chatId, message, key, msg) {
     const sender = msg.key.participant || msg.key.remoteJid;
     const parts = message.trim().split(" ");
     
-    // Parsing Command
     let rawCmd = parts[0]?.toLowerCase();
     let command = rawCmd;
     if (command.startsWith(".") || command.startsWith("#")) {
@@ -41,9 +38,7 @@ async function hcFeatures(sock, chatId, message, key, msg) {
     const args = parts.slice(1).join(" "); 
     const isCreator = isOwner(sender);
 
-    // ==========================================
-    // 1. LIST HC
-    // ==========================================
+    // 1. LIST CONFIG
     if (command === "listhc" || command === "listconfig") {
         try {
             const files = fs.readdirSync(targetDir).filter(f => f.endsWith('.hc')); 
@@ -60,11 +55,9 @@ async function hcFeatures(sock, chatId, message, key, msg) {
         }
     }
 
-    // ==========================================
-    // 2. GET HC (Manual)
-    // ==========================================
+    // 2. AMBIL FILE (MANUAL)
     if (command === "gethc") {
-        if (!args) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nama file! Contoh: .gethc indosat.hc" }, { quoted: msg });
+        if (!args) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nama file!" }, { quoted: msg });
 
         const filename = args.trim();
         const allFiles = fs.readdirSync(targetDir);
@@ -83,7 +76,7 @@ async function hcFeatures(sock, chatId, message, key, msg) {
         }
     }
 
-    //  #WINTUNELING (Kirim Semua)
+    // 3. KIRIM SEMUA (BULK SEND)
     if (message.trim().toLowerCase() === "#wintuneling") {
         const files = fs.readdirSync(targetDir).filter(f => f.endsWith('.hc'));
         if (files.length === 0) return sock.sendMessage(chatId, { text: "⚠️ Config belum ready." }, { quoted: msg });
@@ -100,10 +93,10 @@ async function hcFeatures(sock, chatId, message, key, msg) {
                 await new Promise(r => setTimeout(r, 1500)); 
             } catch (e) {}
         }
-        return; // Stop disini agar tidak lanjut ke shortcut bawah
+        return; 
     }
 
-    // ADD & DEL & UPDATE (Admin Tools)
+    // 4. ADMIN FEATURES (Add, Del, Update, Clear)
     if (command === "addhc" || command === "addfile") {
         if (!isCreator) return sock.sendMessage(chatId, { text: "❌ Khusus Owner!" }, { quoted: msg });
         if (!args) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nama file!" }, { quoted: msg });
@@ -134,7 +127,7 @@ async function hcFeatures(sock, chatId, message, key, msg) {
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const document = msg.message?.documentMessage || quoted?.documentMessage;
 
-        if (!document?.fileName?.endsWith(".zip")) return sock.sendMessage(chatId, { text: "⚠️ Kirim file .zip!" }, { quoted: msg });
+        if (!document?.fileName?.endsWith(".zip")) return sock.sendMessage(chatId, { text: "⚠️ Kirim file .zip dengan caption .updatehc" }, { quoted: msg });
         
         await sock.sendMessage(chatId, { text: "⏳ Update via Zip..." }, { quoted: msg });
         try {
@@ -142,15 +135,17 @@ async function hcFeatures(sock, chatId, message, key, msg) {
             await downloadAndSaveMedia(sock, document.fileName ? msg : { message: quoted }, zipName, "tmp");
             const zipPath = path.join("./tmp", zipName);
 
-            // Bersihkan folder target
+            // Bersihkan folder lama
             const oldFiles = fs.readdirSync(targetDir).filter(f => f.endsWith('.hc'));
             oldFiles.forEach(f => fs.unlinkSync(path.join(targetDir, f)));
 
+            // Ekstrak ZIP
             const zip = new AdmZip(zipPath);
             if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
             fs.mkdirSync(tempDir);
             zip.extractAllTo(tempDir, true);
 
+            // Cari & Pindahkan
             const foundFiles = findHcFiles(tempDir);
             foundFiles.forEach(src => fs.renameSync(src, path.join(targetDir, path.basename(src))));
 
@@ -168,12 +163,11 @@ async function hcFeatures(sock, chatId, message, key, msg) {
         return sock.sendMessage(chatId, { text: `✅ ${files.length} file dihapus.` }, { quoted: msg });
     }
 
-    // Cek jika pesan diawali # dan bukan command lain
+    // 5. SHORTCUT #NAMAFILE
     if (rawCmd.startsWith("#")) {
-        const query = rawCmd.substring(1); // Ambil kata setelah #
+        const query = rawCmd.substring(1); 
         const allFiles = fs.readdirSync(targetDir);
         
-        // Cari file yang mengandung kata kunci (Case Insensitive)
         const matchFile = allFiles.find(f => f.toLowerCase().includes(query) && f.endsWith('.hc'));
 
         if (matchFile) {
@@ -181,7 +175,7 @@ async function hcFeatures(sock, chatId, message, key, msg) {
                 document: fs.readFileSync(path.join(targetDir, matchFile)), 
                 mimetype: 'application/octet-stream', 
                 fileName: matchFile,
-
+                caption: `✅ Config: ${matchFile}`
             }, { quoted: msg });
         }
     }
