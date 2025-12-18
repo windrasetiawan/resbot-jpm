@@ -36,7 +36,7 @@ export async function checkAntilink(sock, chatId, message, msg, sender, isAdmin)
         if (count >= 3) {
             try { await sock.sendMessage(chatId, { delete: msg.key }); } catch {}
             await sock.sendMessage(chatId, { 
-                text: `⚠️ *BATAS PROMOSI HABIS*\n@${sender.split('@')[0]} Jangan spam link!`,
+                text: `⚠️ *PROMOSI 2X AJA BRO*\n\n@${sender.split('@')[0]} Promosi jangan banyak banyak bang ulang besok lagi`,
                 mentions: [sender]
             }, { quoted: msg });
             return true; 
