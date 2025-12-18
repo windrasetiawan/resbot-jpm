@@ -1,8 +1,3 @@
-/*
-⚠️ CODE UTAMA RESBOT JPM V3
-*/
-console.log('Start App ..');
-
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -10,27 +5,26 @@ import P from "pino";
 import clc from "cli-color";
 import readline from "readline";
 import axios from "axios"; 
-
-// IMPORT BAILEYS
 import * as baileys from "baileys";
-const makeWASocket = baileys.default?.default || baileys.default || baileys;
-const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser } = baileys;
 
-// Import Helper
+// IMPORT PLUGINS & HELPERS
 import { handleCommand, ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; 
+import { addGroupLinks } from "./lib/grupLinkStore.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 import fileManager from "./plugins/file_manager.js";
 import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
 import admin from "./plugins/admin.js"; 
-import ping from "./plugins/ping.js"; // <--- [BARU] Import Ping
+import ping from "./plugins/ping.js";
+
+const makeWASocket = baileys.default?.default || baileys.default || baileys;
+const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser } = baileys;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const status = getStatus(`${__dirname}/sessions/`);
 
-// --- DATABASE SETTINGS ---
+// DATABASE SETTINGS
 const pathSettings = './DATABASE/settings.json';
 if (!fs.existsSync(pathSettings)) {
-    if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE'); 
+    if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE', { recursive: true }); 
     fs.writeFileSync(pathSettings, JSON.stringify({ 
         mode: 'public', 
         antilink: [], 
@@ -90,7 +84,6 @@ async function connectToWhatsApp() {
             console.log(clc.green("✅ Terhubung!"));
             ChangeStatus(`${__dirname}/sessions/`, "connected");
             resumeAutoJPM(sock);
-            startScheduler(sock);
         }
     });
 
@@ -101,28 +94,6 @@ async function connectToWhatsApp() {
     });
      
     sock.ev.on("creds.update", saveCreds);
-}
-
-function startScheduler(sock) {
-    setInterval(() => {
-        const now = new Date();
-        const time = `${String(now.getHours()).padStart(2,0)}:${String(now.getMinutes()).padStart(2,0)}`;
-        const dbPath = './DATABASE/group_schedule.json';
-        if (!fs.existsSync(dbPath)) return;
-        try {
-            const db = JSON.parse(fs.readFileSync(dbPath));
-            Object.entries(db).forEach(async ([id, t]) => {
-                if (t.open === time) {
-                    await sock.groupSettingUpdate(id, "not_announcement");
-                    await sock.sendMessage(id, { text: "⏰ Grup dibuka otomatis." });
-                }
-                if (t.close === time) {
-                    await sock.groupSettingUpdate(id, "announcement");
-                    await sock.sendMessage(id, { text: "⏰ Grup ditutup otomatis." });
-                }
-            });
-        } catch {}
-    }, 60000);
 }
 
 async function handleIncomingMessages(sock, msg) {
@@ -136,71 +107,68 @@ async function handleIncomingMessages(sock, msg) {
         const senderNum = sender.split('@')[0];
         const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || "";
         
-        // --- LOGIKA PERMISSIONS ---
         const dbData = getDbSettings();
-        const isCreator = isOwner(sender) || (dbData.owners && dbData.owners.includes(senderNum));
+        const owners = dbData.owners || [];
+        const isCreator = isOwner(sender) || owners.includes(senderNum);
+
+        // Security Mode
         if (dbData.mode === 'self' && !isCreator) return;
 
-        // --- COMMANDS ---
-        if (text === '.self' && isCreator) {
-            dbData.mode = 'self'; saveDbSettings(dbData);
-            return sock.sendMessage(chatId, { text: '🔴 *Mode SELF Aktif*' }, { quoted: msg });
-        }
-        if (text === '.public' && isCreator) {
-            dbData.mode = 'public'; saveDbSettings(dbData);
-            return sock.sendMessage(chatId, { text: '🟢 *Mode PUBLIC Aktif*' }, { quoted: msg });
-        }
-        if (text.startsWith('.addowner') && isCreator) {
-            const target = text.split(' ')[1]?.replace(/[^0-9]/g, '');
-            if (!target) return sock.sendMessage(chatId, { text: '⚠️ Masukkan nomor owner\nContoh: *.addowner 6287xxx*.' }, { quoted: msg });
-            if (!dbData.owners) dbData.owners = [];
-            dbData.owners.push(target); saveDbSettings(dbData);
-            return sock.sendMessage(chatId, { text: `✅ Owner ditambah: ${target}` }, { quoted: msg });
-        }
-        if ((text === '.delallhc' || text === '.deleteallhc') && isCreator) {
-            const dir = './ADDTIONAL/files';
-            if (fs.existsSync(dir)) {
-                const files = fs.readdirSync(dir).filter(f => f.endsWith('.hc'));
-                files.forEach(f => fs.unlinkSync(path.join(dir, f)));
-                return sock.sendMessage(chatId, { text: `✅ Dihapus: ${files.length} file .hc` }, { quoted: msg });
+        // --- FITUR 1: AUTO JOIN (Deteksi Link Grup) ---
+        if (text.includes("chat.whatsapp.com")) {
+            const linkRegex = /chat\.whatsapp\.com\/([0-9A-Za-z]{20,24})/g;
+            const links = text.match(linkRegex);
+            
+            if (links && links.length > 0) {
+                console.log(clc.yellow(`🔍 Mendeteksi ${links.length} link grup...`));
+                for (let link of links) {
+                    addGroupLinks(link); // Simpan ke database
+                    if (dbData.autojoin) {
+                        try {
+                            const code = link.split('chat.whatsapp.com/')[1];
+                            const res = await sock.groupAcceptInvite(code);
+                            if (res) console.log(clc.green(`✅ Auto Join: ${code}`));
+                        } catch (e) { /* Ignore error join */ }
+                        await new Promise(r => setTimeout(r, 3000)); // Delay
+                    }
+                }
             }
         }
 
-        // --- SECURITY ---
-        if (isGroup && /chat.whatsapp.com/i.test(text)) {
-            let isAdmin = false;
-            try {
-                const meta = await sock.groupMetadata(chatId);
-                const p = meta.participants.find(x => x.id === sender);
-                isAdmin = (p?.admin === 'admin' || p?.admin === 'superadmin');
-            } catch {}
-            if (await checkAntilink(sock, chatId, text, msg, sender, isAdmin)) return;
+        // --- FITUR 2: #wintuneling (Kirim Semua Config .hc) ---
+        if (text.trim().toLowerCase() === '#wintuneling') {
+            const dir = './ADDTIONAL/files'; // Pastikan path ini benar sesuai folder Anda
+            
+            if (!fs.existsSync(dir)) {
+                return sock.sendMessage(chatId, { text: "⚠️ Folder 'ADDTIONAL/files' tidak ditemukan!" }, { quoted: msg });
+            }
+
+            const files = fs.readdirSync(dir).filter(x => x.endsWith('.hc'));
+            
+            if (files.length > 0) {
+                await sock.sendMessage(chatId, { text: `🚀 Mengirim ${files.length} file config...` }, { quoted: msg });
+                
+                for (let f of files) {
+                    try {
+                        await sock.sendMessage(chatId, { 
+                            document: fs.readFileSync(path.join(dir, f)), 
+                            mimetype: 'application/octet-stream', 
+                            fileName: f,
+                            caption: `📄 ${f}`
+                        }, { quoted: msg });
+                        
+                        await new Promise(r => setTimeout(r, 1500)); // Delay anti-spam
+                    } catch (err) {
+                        console.log(clc.red(`❌ Gagal kirim file ${f}: ${err.message}`));
+                    }
+                }
+                return; // Stop proses lain
+            } else {
+                return sock.sendMessage(chatId, { text: "⚠️ Tidak ada file .hc di folder." }, { quoted: msg });
+            }
         }
 
-        if (dbData.autojoin && isCreator && text.includes("chat.whatsapp.com")) {
-            let code = text.split('chat.whatsapp.com/')[1].split(' ')[0];
-            await sock.groupAcceptInvite(code).catch(() => {});
-        }
-
-        // --- FEATURES ---
-        if (text.startsWith('.cekkuota') || text.startsWith('.cekxl')) {
-            const args = text.split(" ").slice(1);
-            if (!args[0]) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor XL/Axis!\nContoh: *.cekxl 62878xxxx*." }, { quoted: msg });
-            const msisdn = args[0].replace(/[^0-9]/g, '');
-            await sock.sendMessage(chatId, { text: "⏳ Mengambil data..." }, { quoted: msg });
-            try {
-                const { data } = await axios.get(`https://apigw.kmsp-store.com/sidompul/v4/cek_kuota`, {
-                    params: { msisdn, isJSON: 'true' },
-                    headers: { 'Authorization': 'Basic c2lkb21wdWxhcGk6YXBpZ3drbXNw', 'X-API-Key': '60ef29aa-a648-4668-90ae-20951ef90c55', 'X-App-Version': '4.0.0', 'Content-Type': 'application/x-www-form-urlencoded' }
-                });
-                if (data.status) {
-                    let h = (data.data.hasil || "").replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>?/gm, '');
-                    await sock.sendMessage(chatId, { text: `✅ *KUOTA XL ${msisdn}*\n\n${h}` }, { quoted: msg });
-                } else await sock.sendMessage(chatId, { text: "❌ Gagal/Nomor Salah." }, { quoted: msg });
-            } catch { await sock.sendMessage(chatId, { text: "❌ Error Server." }, { quoted: msg }); }
-            return;
-        }
-
+        // --- FITUR 3: SEARCH FILE (#namafile) ---
         if (text.startsWith("#") && text.length > 1) {
             const q = text.substring(1).trim();
             const d = './ADDTIONAL/files'; 
@@ -210,8 +178,35 @@ async function handleIncomingMessages(sock, msg) {
             }
         }
 
+        // --- COMMANDS ---
+        if (text === '.self' && isCreator) {
+            dbData.mode = 'self'; saveDbSettings(dbData);
+            return sock.sendMessage(chatId, { text: '🔒 *Mode SELF Aktif*' }, { quoted: msg });
+        }
+        if (text === '.public' && isCreator) {
+            dbData.mode = 'public'; saveDbSettings(dbData);
+            return sock.sendMessage(chatId, { text: '🔓 *Mode PUBLIC Aktif*' }, { quoted: msg });
+        }
+        if (text.startsWith('.addowner') && isCreator) {
+            const target = text.split(' ')[1]?.replace(/[^0-9]/g, '');
+            if (!target) return sock.sendMessage(chatId, { text: '⚠️ Format: .addowner 628xxx' }, { quoted: msg });
+            if (!dbData.owners) dbData.owners = [];
+            dbData.owners.push(target); saveDbSettings(dbData);
+            return sock.sendMessage(chatId, { text: `✅ Owner ditambah: ${target}` }, { quoted: msg });
+        }
+
         // --- PLUGINS ---
-        if (ping) await ping(sock, chatId, text, msg.key, msg); // <--- [BARU] Panggil Ping
+        if (isGroup) {
+            let isAdmin = false;
+            try {
+                const meta = await sock.groupMetadata(chatId);
+                const p = meta.participants.find(x => x.id === sender);
+                isAdmin = (p?.admin === 'admin' || p?.admin === 'superadmin');
+            } catch {}
+            if (await checkAntilink(sock, chatId, text, msg, sender, isAdmin)) return;
+        }
+
+        if (ping) await ping(sock, chatId, text, msg.key, msg);
         if (fileManager) await fileManager(sock, chatId, text, msg.key, msg);
         if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg);
         if (admin) await admin(sock, chatId, text, msg.key, msg);
@@ -221,5 +216,6 @@ async function handleIncomingMessages(sock, msg) {
     } catch (e) { console.error("Msg Error:", e); }
 }
 
+const status = getStatus(`${__dirname}/sessions/`);
 if (status === "connected") connectToWhatsApp();
 else connectToWhatsApp();
