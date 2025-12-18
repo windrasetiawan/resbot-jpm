@@ -10,8 +10,8 @@ async function instagram(sock, chatId, message, key, msg) {
     }
     const args = parts.slice(1);
 
-    // Command yang dikenali: .ig, .instagram, .igdl
-    if (command === "ig" || command === "instagram" || command === "igdl") {
+    // 1. FIX: Hanya merespon command "ig"
+    if (command === "ig") {
         if (!args[0]) {
             return sock.sendMessage(chatId, { text: "⚠️ Masukkan link Instagram!\nContoh: *.ig https://www.instagram.com/p/xxxx*" }, { quoted: msg });
         }
@@ -21,7 +21,7 @@ async function instagram(sock, chatId, message, key, msg) {
             return sock.sendMessage(chatId, { text: "⚠️ Link tidak valid! Pastikan link dari Instagram." }, { quoted: msg });
         }
 
-        await sock.sendMessage(chatId, { text: "⏳ Sedang mendownload media Instagram..." }, { quoted: msg });
+        await sock.sendMessage(chatId, { text: "⏳ Sedang mendownload media..." }, { quoted: msg });
 
         try {
             // Request ke API
@@ -33,27 +33,32 @@ async function instagram(sock, chatId, message, key, msg) {
                 const mediaList = res.result.media;
                 const metadata = res.result.metadata || {};
 
-                // Kirim setiap media yang ditemukan (Slide/Carousel)
+                // Loop setiap media (Slide/Carousel)
                 for (let i = 0; i < mediaList.length; i++) {
                     const item = mediaList[i];
                     
-                    // Deteksi Video vs Image
+                    // Deteksi Tipe (Video/Image)
                     let isVideo = item.type === 'video' || item.url.includes('.mp4');
 
+                    // Caption hanya di media pertama
                     const caption = i === 0 ? `
 📝 *Caption:* ${metadata.caption || "-"}
 ❤️ *Likes:* ${metadata.like || 0}
 💬 *Comments:* ${metadata.comment || 0}
 ` : ""; 
+                    
+                    // 2. FIX: DOWNLOAD KE BUFFER DULU (Agar bisa dibuka user)
+                    // Kita ambil file aslinya menggunakan axios dengan responseType arraybuffer
+                    const mediaBuffer = await axios.get(item.url, { responseType: 'arraybuffer' });
 
                     if (isVideo) {
                         await sock.sendMessage(chatId, { 
-                            video: { url: item.url }, 
+                            video: mediaBuffer.data, // Kirim Buffer (Data File)
                             caption: caption 
                         }, { quoted: msg });
                     } else {
                         await sock.sendMessage(chatId, { 
-                            image: { url: item.url }, 
+                            image: mediaBuffer.data, // Kirim Buffer (Data File)
                             caption: caption 
                         }, { quoted: msg });
                     }
@@ -65,7 +70,7 @@ async function instagram(sock, chatId, message, key, msg) {
 
         } catch (error) {
             console.error("IG Error:", error.message);
-            await sock.sendMessage(chatId, { text: "❌ Terjadi kesalahan server." }, { quoted: msg });
+            await sock.sendMessage(chatId, { text: "❌ Gagal mendownload file atau Link Error." }, { quoted: msg });
         }
     }
 }
