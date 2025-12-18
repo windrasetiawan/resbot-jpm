@@ -181,7 +181,7 @@ async function hcFeatures(sock, chatId, message, key, msg) {
                 document: fs.readFileSync(path.join(targetDir, matchFile)), 
                 mimetype: 'application/octet-stream', 
                 fileName: matchFile,
-                caption: `✅ Config: ${matchFile}`
+
             }, { quoted: msg });
         }
     }
