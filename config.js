@@ -7,17 +7,17 @@ if (!fs.existsSync('./DATABASE')) {
 
 const ownerPath = './DATABASE/owner.json';
 
-// --- BAGIAN INI SUDAH DIPERBAIKI ---
-// GANTI '628xxxxxxxxxx' DENGAN NOMOR WA ANDA SENDIRI
-let ownerData = ["6285921645742"]; 
+// --- GANTI DENGAN NOMOR WA ANDA (Format 628xxx) ---
+let ownerData = ["6285921645742"]; // <--- UBAH INI
 
-// Kita paksa tulis ulang database agar nomor ini langsung aktif
-try {
-    fs.writeFileSync(ownerPath, JSON.stringify(ownerData));
-} catch (e) {
-    console.error("Gagal menulis database owner:", e);
+// Load owner dari database jika ada
+if (fs.existsSync(ownerPath)) {
+    try {
+        ownerData = JSON.parse(fs.readFileSync(ownerPath));
+    } catch {
+        console.error("Database owner rusak, menggunakan default.");
+    }
 }
-// --------------------------------------------
 
 export const numberAllowed = ownerData; 
 
