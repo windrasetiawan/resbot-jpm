@@ -7,18 +7,17 @@ import readline from "readline";
 import * as baileys from "baileys";
 
 // --- IMPORT HELPERS ---
-// Hapus 'handleCommand' dari import karena kita tidak pakai lagi
 import { ChangeStatus, getStatus, isOwner } from "./lib/utils.js"; 
 import { addGroupLinks } from "./lib/grupLinkStore.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
-// --- IMPORT PLUGINS (Manual) ---
+// --- IMPORT PLUGINS (MANUAL) ---
 import groupFeatures, { checkAntilink } from "./plugins/group_features.js";
 import admin from "./plugins/admin.js"; 
 import ping from "./plugins/ping.js";
 import hcFeatures from "./plugins/hc_features.js"; 
 import cekkuota from "./plugins/cekkuota.js";      
-import menu from "./plugins/menu.js"; // <--- TAMBAHKAN INI AGAR MENU MUNCUL
+import menu from "./plugins/menu.js"; // <--- MENU WAJIB DI-IMPORT DISINI
 
 const makeWASocket = baileys.default?.default || baileys.default || baileys;
 const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser } = baileys;
@@ -56,9 +55,10 @@ const question = (text) => {
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState("sessions");
+    console.log(clc.yellow("⏳ Sedang memeriksa versi WA & Koneksi...")); // LOG SUPAYA TIDAK DIKIRA STUCK
     const { version } = await fetchLatestBaileysVersion();
     
-    console.log(clc.yellow(`Menghubungkan ke WA (Versi Baileys: ${version})...`));
+    console.log(clc.yellow(`🚀 Memulai Bot (Versi Baileys: ${version.join('.')})...`));
 
     const sock = makeWASocket({
         version,
@@ -72,26 +72,25 @@ async function connectToWhatsApp() {
     // --- PAIRING CODE LOGIC ---
     if (!sock.authState.creds.registered) {
         console.log(clc.cyan.bold("\n🤖 Mode Pairing Code Aktif!"));
-        // Tunggu 2 detik agar log terlihat, lalu tanya nomor
+        // Tunggu 3 detik agar log terlihat jelas
         setTimeout(async () => {
-            const phoneNumber = await question(clc.yellow("Masukkan Nomor WhatsApp (contoh: 628123456xxx): "));
+            const phoneNumber = await question(clc.yellow("📱 Masukkan Nomor WhatsApp (contoh: 628123456xxx): "));
             if (phoneNumber) {
                 try {
-                    // Bersihkan nomor dari spasi atau strip
                     const code = await sock.requestPairingCode(phoneNumber.trim().replace(/[^0-9]/g, ''));
                     console.log(clc.green.bold(`🔗 KODE PAIRING: ${code?.match(/.{1,4}/g)?.join("-") || code}`));
                 } catch (e) {
-                    console.error(clc.red("Gagal request pairing code. Pastikan nomor benar."), e);
+                    console.error(clc.red("❌ Gagal request pairing code. Cek nomor atau koneksi."), e);
                 }
             }
-        }, 2000);
+        }, 3000);
     }
 
     sock.ev.on("connection.update", (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === "close") {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log(clc.red("Koneksi terputus, mencoba reconnect..."));
+            console.log(clc.red("⚠️ Koneksi terputus, mencoba reconnect..."));
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === "open") {
             console.log(clc.green("✅ Terhubung ke WhatsApp!"));
@@ -119,7 +118,7 @@ async function handleIncomingMessages(sock, msg) {
         sender = jidNormalizedUser(sender);
         const senderNum = sender.split('@')[0];
         
-        // Ambil text pesan dari berbagai kemungkinan tipe pesan
+        // Ambil text pesan
         const text = msg.message?.conversation || 
                      msg.message?.extendedTextMessage?.text || 
                      msg.message?.imageMessage?.caption || 
@@ -132,7 +131,7 @@ async function handleIncomingMessages(sock, msg) {
         // Security Mode (Self/Public)
         if (dbData.mode === 'self' && !isCreator) return;
 
-        // --- 1. FITUR AUTO JOIN (Prioritas) ---
+        // --- 1. FITUR AUTO JOIN ---
         if (text.includes("chat.whatsapp.com")) {
             const links = text.match(/chat\.whatsapp\.com\/([0-9A-Za-z]{20,24})/g);
             if (links && links.length > 0) {
@@ -148,14 +147,16 @@ async function handleIncomingMessages(sock, msg) {
             }
         }
 
-        // --- 2. EKSEKUSI PLUGINS (Manual Call - Anti Bentrok) ---
-        // Gunakan try-catch per plugin agar satu error tidak mematikan bot
+        // --- 2. EKSEKUSI PLUGINS (MANUAL & PASTI) ---
+        // Panggil plugin satu per satu. Jika satu error, yang lain tetap jalan.
         try { if (ping) await ping(sock, chatId, text, msg.key, msg); } catch(e){}
         try { if (groupFeatures) await groupFeatures(sock, chatId, text, msg.key, msg); } catch(e){}
         try { if (admin) await admin(sock, chatId, text, msg.key, msg); } catch(e){}
         try { if (hcFeatures) await hcFeatures(sock, chatId, text, msg.key, msg); } catch(e){}
         try { if (cekkuota) await cekkuota(sock, chatId, text, msg.key, msg); } catch(e){}
-        try { if (menu) await menu(sock, chatId, text, msg.key, msg); } catch(e){} // Menu dipanggil disini
+        
+        // [FIX] MENU SEKARANG DIPANGGIL DISINI
+        try { if (menu) await menu(sock, chatId, text, msg.key, msg); } catch(e){} 
 
         // --- 3. COMMANDS BAWAAN ---
         if (text === '.self' && isCreator) {
@@ -184,8 +185,6 @@ async function handleIncomingMessages(sock, msg) {
             } catch {}
             if (await checkAntilink(sock, chatId, text, msg, sender, isAdmin)) return;
         }
-
-        // HAPUS handleCommand(...) DARI SINI AGAR TIDAK DOUBLE
 
     } catch (e) { console.error("Msg Error:", e); }
 }
