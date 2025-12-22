@@ -36,7 +36,7 @@ async function menu(sock, chatId, message, key, msg) {
     if (command === "menu" || command === "help" || command === "list") {
         
         // Ambil Nama User
-        const pushName = msg.pushName || "Kak";
+        const pushName = msg.pushName || "Bro😉";
         
         // Waktu & Tanggal
         const time = new Date().toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }) + " WIB";
@@ -100,9 +100,6 @@ async function menu(sock, chatId, message, key, msg) {
 │ ➤ #wintuneling (semua config)
 │ ➤ #<namafile> (ambil satu)
 ╰──────────────────
-╭──────────────────
-│ 😘 *JANGAN LUPA SHOLAT*
-╰───────────────────
 `;
 
         // Mengirim pesan menu
