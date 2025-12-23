@@ -42,7 +42,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // --- 3. WINTUNELING (Kirim Semua File Satu Per Satu) ---
+    // --- 3. WINTUNELING (Kirim Semua File Satu Per Satu - No Caption) ---
     if (cmd === "#wintuneling") {
         const files = fs.readdirSync(dbHC);
         if (files.length === 0) return sock.sendMessage(chatId, { text: "📂 Database Config Kosong." });
@@ -55,16 +55,17 @@ async function hcFeatures(sock, chatId, text, key, msg) {
                 await sock.sendMessage(chatId, { 
                     document: fs.readFileSync(filePath), 
                     fileName: file,
-                    mimetype: 'application/octet-stream'
+                    mimetype: 'application/octet-stream',
+                    caption: "" // Kosongkan caption untuk hindari spam filter
                 });
                 
-                // Jeda 1.5 detik per file agar tidak dianggap spam brutal
-                await new Promise(r => setTimeout(r, 1500)); 
+                // Jeda 2 detik per file agar aman dari banned
+                await new Promise(r => setTimeout(r, 2000)); 
             } catch (e) {
-                console.error(`Gagal kirim file: ${file}`);
+                console.error(`Gagal kirim: ${file}`);
             }
         }
-        return sock.sendMessage(chatId, { text: "✅ Semua file berhasil dikirim." });
+        return sock.sendMessage(chatId, { text: "✅ Pengiriman selesai." });
     }
 
     // --- 4. LIST HC (.listhc) ---
@@ -76,7 +77,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: txt });
     }
 
-    // --- 5. GET SINGLE FILE (#namafile) ---
+    // --- 5. GET SINGLE FILE (#namafile - No Caption) ---
     if (text.startsWith("#") && cmd !== "#uploadhc" && cmd !== "#wintuneling") {
         const file = text.slice(1).trim();
         const p = path.join(dbHC, file);
@@ -84,7 +85,8 @@ async function hcFeatures(sock, chatId, text, key, msg) {
             return sock.sendMessage(chatId, { 
                 document: fs.readFileSync(p), 
                 fileName: file,
-                mimetype: 'application/octet-stream'
+                mimetype: 'application/octet-stream',
+                caption: "" // Tanpa caption
             });
         }
     }
