@@ -9,24 +9,29 @@ async function autojpm(sock, chatId, text, key, msg) {
 
     if (cmd === "set") {
         const min = parseInt(val);
+        if (isNaN(min)) return sock.sendMessage(chatId, { text: "⚠️ Masukkan angka!" });
         global.autojpm.loopDelayHours = min / 60;
-        return sock.sendMessage(chatId, { text: `✅ Jeda istirahat: ${min} menit.` });
+        return sock.sendMessage(chatId, { text: `✅ Jeda diatur: ${min} menit.` });
     }
 
     if (cmd === "on" && val) {
         global.autojpmRunning = true;
         saveStatus(true, val, null);
         sock.sendMessage(chatId, { text: "🚀 AUTO JPM AKTIF" });
+        
         while (global.autojpmRunning) {
             const groups = await sock.groupFetchAllParticipating();
             const targets = Object.values(groups).filter(g => !readWhitelist().includes(g.id));
+            
             for (const g of targets) {
                 if (!global.autojpmRunning) break;
                 await sock.sendMessage(g.id, { text: spintax(val) }).catch(() => {});
                 await new Promise(r => setTimeout(r, 20000 + Math.floor(Math.random() * 10000)));
             }
+            
             if (!global.autojpmRunning) break;
-            await new Promise(r => setTimeout(r, (global.autojpm.loopDelayHours || 1) * 3600000));
+            const delayMs = (global.autojpm.loopDelayHours || 1) * 3600000;
+            await new Promise(r => setTimeout(r, delayMs));
         }
     }
 
