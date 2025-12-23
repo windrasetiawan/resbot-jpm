@@ -35,9 +35,9 @@ async function menu(sock, chatId, text, key, msg) {
 │ ➤ .addhc (Reply File)
 │ ➤ .listhc
 │ ➤ .delhc <nama>
+│ ➤ #delallhc (Delete All File)
 │ ➤ #namafile (No Caption)
 │ ➤ #wintuneling (Send All)
-│ ➤ #uploadhc (Delete All File)
 │ ➤ #uploadhc (Reply Zip)
 ╰──────────────────────
 ╭─「 🛠️ *UTILITIES* 」
