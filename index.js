@@ -28,7 +28,7 @@ import menu from "./plugins/menu.js";
 import jpm from "./plugins/jpm.js"; 
 import pushkontak from "./plugins/pushkontak.js";
 import autojpm from "./plugins/autojpm.js";
-import listgc from "./plugins/listgc.js"; // <--- PLUGIN BARU
+import listgc from "./plugins/listgc.js"; 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -77,7 +77,13 @@ async function startBot() {
         const { connection, lastDisconnect } = update;
         if (connection === "close") {
             const reason = lastDisconnect?.error?.output?.statusCode;
-            if (reason !== DisconnectReason.loggedOut) startBot();
+            if (reason !== DisconnectReason.loggedOut) {
+                // --- FIX RECONNECT LOOPING ---
+                console.log(clc.red("⚠️ Koneksi terputus. Mencoba menyambungkan ulang dalam 5 detik..."));
+                setTimeout(startBot, 5000); // Jeda 5 detik sebelum reconnect
+            } else {
+                console.log(clc.red("❌ Sesi Logged Out. Silakan scan ulang/hapus folder session."));
+            }
         } else if (connection === "open") {
             console.log(clc.green("✅ TERHUBUNG!"));
             ChangeStatus(__dirname + "/sessions/", "connected");
@@ -125,7 +131,7 @@ async function handleMsg(sock, msg) {
             jpm(sock, sender, text, msg.key, msg),
             pushkontak(sock, sender, text, msg.key, msg),
             autojpm(sock, chatId, text, msg.key, msg),
-            listgc(sock, chatId, text, msg.key, msg) // <--- EKSEKUSI LISTGC
+            listgc(sock, chatId, text, msg.key, msg) 
         ]);
 
     } catch (e) {}
