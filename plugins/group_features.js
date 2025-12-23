@@ -1,116 +1,66 @@
 import fs from "fs";
 import { isOwner } from "../lib/utils.js";
 
-const schedulePath = './DATABASE/group_schedule.json';
+const promoStore = {}; // Memori harian
 
-// RAM Khusus Antilink (Harian)
-global.antilinkData = global.antilinkData || {
-    date: new Date().getDate(),
-    users: {} 
-};
+async function groupFeatures(sock, chatId, text, key, msg) {
+    const isGroup = chatId.endsWith('@g.us');
+    if (!isGroup) return;
 
-// Pastikan file jadwal ada
-if (!fs.existsSync(schedulePath)) {
-    if (!fs.existsSync('./DATABASE')) fs.mkdirSync('./DATABASE', { recursive: true });
-    fs.writeFileSync(schedulePath, JSON.stringify({}));
-}
-
-// FUNGSI CEK ANTILINK
-export async function checkAntilink(sock, chatId, message, msg, sender, isAdmin) {
-    const today = new Date().getDate();
-    if (global.antilinkData.date !== today) {
-        global.antilinkData.date = today;
-        global.antilinkData.users = {}; 
-    }
-
-    const db = global.db.settings;
-    if (!db.antilink || !db.antilink.includes(chatId)) return false;
-    if (isAdmin || isOwner(sender)) return false;
-
-    const linkRegex = /chat.whatsapp.com\/([0-9A-Za-z]{20,24})/i;
-    if (linkRegex.test(message)) {
-        let count = global.antilinkData.users[sender] || 0;
-        count++;
-        global.antilinkData.users[sender] = count;
-
-        if (count >= 3) {
-            try { await sock.sendMessage(chatId, { delete: msg.key }); } catch {}
-            await sock.sendMessage(chatId, { 
-                text: `⚠️ *PROMOSI 2X AJA BRO*\n\n@${sender.split('@')[0]} Promosi jangan banyak banyak bang ulang besok lagi`,
-                mentions: [sender]
-            }, { quoted: msg });
-            return true; 
-        }
-    }
-    return false;
-}
-
-// COMMAND HANDLER GRUP
-async function groupFeatures(sock, chatId, message, key, msg) {
-    if (!chatId.endsWith('@g.us')) return; 
-
-    const parts = message.trim().split(" ");
-    let command = parts[0]?.toLowerCase();
-    if (command.startsWith(".") || command.startsWith("#")) command = command.substring(1);
-    const args = parts.slice(1);
-    const q = args.join(" ");
     const sender = msg.key.participant || msg.key.remoteJid;
+    const command = text.split(" ")[0].toLowerCase();
+    const args = text.split(" ")[1];
+    const isCreator = isOwner(sender);
 
+    // Get Admin Status
     let isAdmin = false;
     try {
         const meta = await sock.groupMetadata(chatId);
-        const p = meta.participants.find(x => x.id === sender);
-        isAdmin = (p?.admin === 'admin' || p?.admin === 'superadmin');
+        isAdmin = meta.participants.find(p => p.id === sender)?.admin !== null;
     } catch {}
 
-    // Antilink
-    if (command === "antilink") {
-        if (!isAdmin) return sock.sendMessage(chatId, { text: "❌ Admin Only" }, { quoted: msg });
-        let db = global.db.settings;
-        if (!db.antilink) db.antilink = [];
-
-        if (args[0] === "on") {
+    // --- COMMANDS ---
+    const db = JSON.parse(fs.readFileSync("./DATABASE/settings.json"));
+    
+    if (command === ".antilink" && isCreator) {
+        if (args === "on") {
             if (!db.antilink.includes(chatId)) db.antilink.push(chatId);
-            global.saveSettings();
-            return sock.sendMessage(chatId, { text: "✅ Antilink ON" }, { quoted: msg });
-        } else if (args[0] === "off") {
+            fs.writeFileSync("./DATABASE/settings.json", JSON.stringify(db, null, 2));
+            return sock.sendMessage(chatId, { text: "🛡️ Antilink ON (Max 2x/hari)" });
+        }
+        if (args === "off") {
             db.antilink = db.antilink.filter(id => id !== chatId);
-            global.saveSettings();
-            return sock.sendMessage(chatId, { text: "⭕ Antilink OFF" }, { quoted: msg });
+            fs.writeFileSync("./DATABASE/settings.json", JSON.stringify(db, null, 2));
+            return sock.sendMessage(chatId, { text: "⚠️ Antilink OFF" });
         }
     }
 
-    // Open/Close Manual
-    if (command === "open" && isAdmin) {
-        await sock.groupSettingUpdate(chatId, 'not_announcement');
-        return sock.sendMessage(chatId, { text: "🔓 Grup Dibuka" });
-    }
-    if (command === "close" && isAdmin) {
-        await sock.groupSettingUpdate(chatId, 'announcement');
-        return sock.sendMessage(chatId, { text: "🔒 Grup Ditutup" });
+    if (command === ".autojoin" && isCreator) {
+        db.autojoin = (args === "on");
+        fs.writeFileSync("./DATABASE/settings.json", JSON.stringify(db, null, 2));
+        return sock.sendMessage(chatId, { text: `🚀 Auto Join: ${db.autojoin ? "ON" : "OFF"}` });
     }
 
-    // [DITAMBAHKAN] SET JADWAL GROUP (Hanya Fitur Ini)
-    if ((command === "setopen" || command === "setclose") && isAdmin) {
-        if (!q.match(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)) {
-            return sock.sendMessage(chatId, { text: "⚠️ Format salah! Contoh: *.setclose 22:00*" }, { quoted: msg });
+    // --- LOGIKA LIMIT PROMOSI 2X ---
+    if (db.antilink.includes(chatId) && !isAdmin && !isCreator) {
+        if (text.includes("chat.whatsapp.com") || text.includes("http")) {
+            const today = new Date().toLocaleDateString();
+            const userKey = `${chatId}-${sender}`;
+            
+            if (!promoStore[userKey] || promoStore[userKey].date !== today) {
+                promoStore[userKey] = { count: 0, date: today };
+            }
+
+            promoStore[userKey].count++;
+
+            if (promoStore[userKey].count > 2) {
+                await sock.sendMessage(chatId, { delete: msg.key });
+                return sock.sendMessage(chatId, { 
+                    text: `⚠️ @${sender.split('@')[0]} PROMOSI MAX 2X AJA BOS, KALAU MAU PROMOSI LAGI BESOK LAGI YAH....`,
+                    mentions: [sender]
+                });
+            }
         }
-
-        const db = JSON.parse(fs.readFileSync(schedulePath));
-        if (!db[chatId]) db[chatId] = {};
-        
-        const type = command === "setopen" ? "open" : "close";
-        db[chatId][type] = q;
-        
-        fs.writeFileSync(schedulePath, JSON.stringify(db, null, 2));
-        return sock.sendMessage(chatId, { text: `✅ Jadwal ${type} grup diatur ke jam ${q}` }, { quoted: msg });
-    }
-
-    // Hidetag
-    if (command === "hidetag" && isAdmin) {
-        const meta = await sock.groupMetadata(chatId);
-        await sock.sendMessage(chatId, { text: q ? q : "📣", mentions: meta.participants.map(p => p.id) }, { quoted: msg });
     }
 }
-
 export default groupFeatures;
