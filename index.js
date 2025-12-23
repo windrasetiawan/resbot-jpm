@@ -28,6 +28,7 @@ import menu from "./plugins/menu.js";
 import jpm from "./plugins/jpm.js"; 
 import pushkontak from "./plugins/pushkontak.js";
 import autojpm from "./plugins/autojpm.js";
+import listgc from "./plugins/listgc.js"; // <--- PLUGIN BARU
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -36,7 +37,6 @@ const dbFolder = path.join(__dirname, "DATABASE");
 if (!fs.existsSync(dbFolder)) fs.mkdirSync(dbFolder, { recursive: true });
 const settingsPath = path.join(dbFolder, "settings.json");
 
-// Default Settings
 if (!fs.existsSync(settingsPath)) {
     fs.writeFileSync(settingsPath, JSON.stringify({ mode: 'public', antilink: [], autojoin: false, owners: [], schedule: {} }));
 }
@@ -49,20 +49,16 @@ const question = (text) => {
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState("sessions");
     const { version } = await fetchLatestBaileysVersion();
-    
-    // --- FIX LOG SPAM DISINI ---
-    // Kita buat logger yang benar-benar silent (diam)
     const logger = P({ level: "silent" });
     
-    console.log(clc.cyan(`🤖 RESBOT JPM V4 FINAL (Baileys ${version.join('.')})`));
+    console.log(clc.cyan(`🤖 RESBOT JPM V4 (Baileys ${version.join('.')})`));
 
     const sock = makeWASocket({
         version,
-        logger: logger, // Gunakan logger silent
+        logger: logger, 
         printQRInTerminal: false,
         auth: {
             creds: state.creds,
-            // Gunakan logger silent juga untuk KeyStore (ini yang bikin spam tadi)
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         browser: ["Ubuntu", "Chrome", "20.0.04"],
@@ -86,10 +82,7 @@ async function startBot() {
             console.log(clc.green("✅ TERHUBUNG!"));
             ChangeStatus(__dirname + "/sessions/", "connected");
             resumeAutoJPM(sock);
-            
-            setInterval(() => {
-                runGroupSchedule(sock);
-            }, 60000);
+            setInterval(() => { runGroupSchedule(sock); }, 60000);
         }
     });
 
@@ -110,22 +103,13 @@ async function handleMsg(sock, msg) {
         const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || "";
         
         let db = {};
-        try {
-            db = JSON.parse(fs.readFileSync(settingsPath));
-        } catch { return; }
+        try { db = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
 
-        // --- FITUR AUTO JOIN (FIXED) ---
+        // Auto Join
         if (db.autojoin && (text.includes("chat.whatsapp.com") || text.includes("wa.me"))) {
             const code = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
             if (code && code[1]) {
-                // Log tidak perlu terlalu heboh, cukup info saja
-                // console.log(clc.yellow(`🚀 Link Grup Terdeteksi`)); 
-                await sock.groupAcceptInvite(code[1])
-                    .then(() => {
-                        addGroupLinks(`https://chat.whatsapp.com/${code[1]}`);
-                        console.log(clc.green(`✅ Berhasil Join Grup Baru!`));
-                    })
-                    .catch(() => {}); // Silent error agar tidak nyampah
+                await sock.groupAcceptInvite(code[1]).catch(() => {});
             }
         }
 
@@ -140,12 +124,11 @@ async function handleMsg(sock, msg) {
             cekkuota(sock, chatId, text, msg.key, msg),
             jpm(sock, sender, text, msg.key, msg),
             pushkontak(sock, sender, text, msg.key, msg),
-            autojpm(sock, chatId, text, msg.key, msg)
+            autojpm(sock, chatId, text, msg.key, msg),
+            listgc(sock, chatId, text, msg.key, msg) // <--- EKSEKUSI LISTGC
         ]);
 
-    } catch (e) { 
-        // console.error(e); // Matikan log error umum agar terminal bersih
-    }
+    } catch (e) {}
 }
 
 startBot();
