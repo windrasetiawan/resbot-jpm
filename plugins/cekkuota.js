@@ -1,21 +1,23 @@
 import axios from 'axios';
-async function cekkuota(sock, chatId, message, key, msg) {
-    if (!message.startsWith(".cekkuota") && !message.startsWith(".cekxl")) return;
-    const num = message.split(" ")[1];
-    if (!num) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor!" });
+async function cekkuota(sock, chatId, text, key, msg) {
+    const cmd = text.split(" ")[0].toLowerCase();
+    if (cmd !== ".cekxl" && cmd !== ".cekkuota") return;
     
-    let msisdn = num.replace(/\D/g, '').replace(/^08/, '628');
-    await sock.sendMessage(chatId, { text: "⏳ Sedang cek kouta..." }, { quoted: msg });
+    const num = text.split(" ")[1];
+    if (!num) return sock.sendMessage(chatId, { text: "⚠️ Contoh: .cekxl 0878xxx" });
+
+    sock.sendMessage(chatId, { text: "⏳ Cek server..." });
+    const msisdn = num.replace(/\D/g, '').replace(/^08/, '628');
 
     try {
         const { data } = await axios.get(`https://apigw.kmsp-store.com/sidompul/v4/cek_kuota`, {
             params: { msisdn, isJSON: 'true' },
             headers: { 'Authorization': 'Basic c2lkb21wdWxhcGk6YXBpZ3drbXNw', 'X-API-Key': '60ef29aa-a648-4668-90ae-20951ef90c55' }
         });
-        if (data.success || data.status) {
-            let hasil = (data.data?.hasil || data.hasil || "Kosong").replace(/<[^>]*>/g, "\n");
-            await sock.sendMessage(chatId, { text: `✅ *KUOTA XL/AXIS*\n\n${hasil}` }, { quoted: msg });
-        } else throw new Error();
-    } catch { await sock.sendMessage(chatId, { text: "❌ Gagal." }, { quoted: msg }); }
+        const hasil = data.data?.hasil?.replace(/<[^>]*>/g, "\n") || "No Data.";
+        sock.sendMessage(chatId, { text: `✅ *KUOTA XL/AXIS*\n${hasil}` });
+    } catch {
+        sock.sendMessage(chatId, { text: "❌ Server Error." });
+    }
 }
 export default cekkuota;
