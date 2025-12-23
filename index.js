@@ -36,7 +36,7 @@ const dbFolder = path.join(__dirname, "DATABASE");
 if (!fs.existsSync(dbFolder)) fs.mkdirSync(dbFolder, { recursive: true });
 const settingsPath = path.join(dbFolder, "settings.json");
 
-// Default Settings jika file belum ada
+// Default Settings
 if (!fs.existsSync(settingsPath)) {
     fs.writeFileSync(settingsPath, JSON.stringify({ mode: 'public', antilink: [], autojoin: false, owners: [], schedule: {} }));
 }
@@ -50,15 +50,20 @@ async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState("sessions");
     const { version } = await fetchLatestBaileysVersion();
     
+    // --- FIX LOG SPAM DISINI ---
+    // Kita buat logger yang benar-benar silent (diam)
+    const logger = P({ level: "silent" });
+    
     console.log(clc.cyan(`🤖 RESBOT JPM V4 FINAL (Baileys ${version.join('.')})`));
 
     const sock = makeWASocket({
         version,
-        logger: P({ level: "silent" }),
+        logger: logger, // Gunakan logger silent
         printQRInTerminal: false,
         auth: {
             creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, P({ level: "fatal" })),
+            // Gunakan logger silent juga untuk KeyStore (ini yang bikin spam tadi)
+            keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         browser: ["Ubuntu", "Chrome", "20.0.04"],
         generateHighQualityLinkPreview: true,
@@ -82,7 +87,6 @@ async function startBot() {
             ChangeStatus(__dirname + "/sessions/", "connected");
             resumeAutoJPM(sock);
             
-            // --- JALANKAN JADWAL GRUP ---
             setInterval(() => {
                 runGroupSchedule(sock);
             }, 60000);
@@ -105,33 +109,28 @@ async function handleMsg(sock, msg) {
         const sender = jidNormalizedUser(isGroup ? (msg.key.participant || msg.key.remoteJid) : chatId);
         const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || "";
         
-        // Baca Settings
         let db = {};
         try {
             db = JSON.parse(fs.readFileSync(settingsPath));
         } catch { return; }
 
-        // --- FITUR 1: AUTO JOIN GLOBAL (Ditaruh DI ATAS Cek Owner) ---
-        // Agar bot tetap join link grup meskipun mode Self atau dikirim bukan owner
+        // --- FITUR AUTO JOIN (FIXED) ---
         if (db.autojoin && (text.includes("chat.whatsapp.com") || text.includes("wa.me"))) {
-            // Regex diperluas sedikit untuk menangkap berbagai variasi link
             const code = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
             if (code && code[1]) {
-                console.log(clc.yellow(`🚀 Mendeteksi Link Grup: ${code[1]}`));
+                // Log tidak perlu terlalu heboh, cukup info saja
+                // console.log(clc.yellow(`🚀 Link Grup Terdeteksi`)); 
                 await sock.groupAcceptInvite(code[1])
                     .then(() => {
                         addGroupLinks(`https://chat.whatsapp.com/${code[1]}`);
-                        console.log(clc.green(`✅ Berhasil Join!`));
+                        console.log(clc.green(`✅ Berhasil Join Grup Baru!`));
                     })
-                    .catch(() => console.log(clc.red(`❌ Gagal Join (Mungkin Link Reset/Penuh)`)));
+                    .catch(() => {}); // Silent error agar tidak nyampah
             }
         }
 
-        // --- CEK MODE SELF ---
-        // Jika Self Mode ON, hanya Owner yang bisa lanjut ke perintah di bawah
         if (db.mode === 'self' && !isOwner(sender)) return;
 
-        // --- ROUTER PLUGINS ---
         await Promise.all([
             ping(sock, chatId, text, msg.key, msg),
             menu(sock, chatId, text, msg.key, msg),
@@ -144,7 +143,9 @@ async function handleMsg(sock, msg) {
             autojpm(sock, chatId, text, msg.key, msg)
         ]);
 
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+        // console.error(e); // Matikan log error umum agar terminal bersih
+    }
 }
 
 startBot();
