@@ -1,89 +1,104 @@
 import fs from "fs";
 import path from "path";
-import AdmZip from "adm-zip"; 
-import archiver from "archiver"; 
+import AdmZip from "adm-zip";
 import { downloadAndSaveMedia, isOwner } from "../lib/utils.js";
 
-async function hcFeatures(sock, chatId, message, key, msg) {
-    const sender = msg.key.participant || msg.key.remoteJid;
-    const text = message.trim();
-    const command = text.split(" ")[0].toLowerCase(); 
+async function hcFeatures(sock, chatId, text, key, msg) {
+    const cmd = text.split(" ")[0].toLowerCase();
     const args = text.split(" ").slice(1).join(" ");
-    const isCreator = isOwner(sender);
+    const dbHC = "./DATABASE/HC";
+    
+    // Pastikan folder database HC ada
+    if (!fs.existsSync(dbHC)) fs.mkdirSync(dbHC, { recursive: true });
 
-    const dbFolder = path.join(process.cwd(), "DATABASE", "HC");
-    if (!fs.existsSync(dbFolder)) fs.mkdirSync(dbFolder, { recursive: true });
+    const isCreator = isOwner(msg.key.participant || msg.key.remoteJid);
 
-    // 1. ADD HC (Simpan 1 file)
-    if (command === ".addhc") {
-        if (!isCreator) return sock.sendMessage(chatId, { text: "🔒 Khusus Owner" }, { quoted: msg });
-        const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        if (!quoted?.documentMessage) return sock.sendMessage(chatId, { text: "⚠️ Reply file config!" }, { quoted: msg });
+    // --- 1. ADD HC (.addhc) ---
+    if (cmd === ".addhc") {
+        if (!isCreator) return;
+        const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        if (!q?.documentMessage) return sock.sendMessage(chatId, { text: "⚠️ Reply file config yang mau disimpan!" });
+        
+        const name = args || q.documentMessage.fileName;
+        const p = await downloadAndSaveMedia(sock, q, name);
+        fs.renameSync(p, path.join(dbHC, name));
+        return sock.sendMessage(chatId, { text: `✅ File disimpan: *${name}*` });
+    }
 
-        let fileName = args || quoted.documentMessage.fileName;
+    // --- 2. UPLOAD HC ZIP (#uploadhc) ---
+    if (cmd === "#uploadhc") {
+        if (!isCreator) return;
+        const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        if (!q?.documentMessage?.fileName.endsWith(".zip")) return sock.sendMessage(chatId, { text: "⚠️ Reply file ZIP!" });
+        
+        const p = await downloadAndSaveMedia(sock, q, "temp.zip");
         try {
-            const savedPath = await downloadAndSaveMedia(sock, quoted, fileName);
-            fs.renameSync(savedPath, path.join(dbFolder, fileName));
-            return sock.sendMessage(chatId, { text: `✅ File disimpan: *${fileName}*` }, { quoted: msg });
-        } catch { return sock.sendMessage(chatId, { text: "❌ Gagal." }, { quoted: msg }); }
+            const zip = new AdmZip(p);
+            zip.extractAllTo(dbHC, true);
+            fs.unlinkSync(p);
+            return sock.sendMessage(chatId, { text: "✅ Berhasil Unzip ke Database." });
+        } catch (e) {
+            return sock.sendMessage(chatId, { text: "❌ File ZIP rusak atau tidak valid." });
+        }
     }
 
-    // 2. UPLOAD HC ZIP (Bulk Upload)
-    if (command === "#uploadhc") {
-        if (!isCreator) return sock.sendMessage(chatId, { text: "🔒 Khusus Owner" }, { quoted: msg });
-        const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        if (!quoted?.documentMessage?.fileName.endsWith('.zip')) return sock.sendMessage(chatId, { text: "⚠️ Reply file ZIP!" }, { quoted: msg });
+    // --- 3. WINTUNELING (Kirim Semua File Satu Per Satu) ---
+    if (cmd === "#wintuneling") {
+        const files = fs.readdirSync(dbHC);
+        if (files.length === 0) return sock.sendMessage(chatId, { text: "📂 Database Config Kosong." });
 
-        await sock.sendMessage(chatId, { text: "⏳ Mengekstrak..." }, { quoted: msg });
-        try {
-            const zipPath = await downloadAndSaveMedia(sock, quoted, "temp.zip");
-            const zip = new AdmZip(zipPath);
-            zip.extractAllTo(dbFolder, true);
-            fs.unlinkSync(zipPath);
-            return sock.sendMessage(chatId, { text: `✅ Sukses Extract ke Database.` }, { quoted: msg });
-        } catch { return sock.sendMessage(chatId, { text: "❌ Gagal ekstrak." }, { quoted: msg }); }
+        await sock.sendMessage(chatId, { text: `🚀 Mengirim ${files.length} file config...` });
+
+        for (const file of files) {
+            const filePath = path.join(dbHC, file);
+            try {
+                await sock.sendMessage(chatId, { 
+                    document: fs.readFileSync(filePath), 
+                    fileName: file,
+                    mimetype: 'application/octet-stream'
+                });
+                
+                // Jeda 1.5 detik per file agar tidak dianggap spam brutal
+                await new Promise(r => setTimeout(r, 1500)); 
+            } catch (e) {
+                console.error(`Gagal kirim file: ${file}`);
+            }
+        }
+        return sock.sendMessage(chatId, { text: "✅ Semua file berhasil dikirim." });
     }
 
-    // 3. WINTUNELING (Download All)
-    if (command === "#wintuneling") {
-        const files = fs.readdirSync(dbFolder);
-        if (files.length === 0) return sock.sendMessage(chatId, { text: "📂 Database Kosong." }, { quoted: msg });
-        await sock.sendMessage(chatId, { text: `⏳ Mengompres ${files.length} file...` }, { quoted: msg });
-
-        const zipName = "All_Config_Resbot.zip";
-        const outputZipPath = path.join(process.cwd(), "tmp", zipName);
-        const output = fs.createWriteStream(outputZipPath);
-        const archive = archiver('zip', { zlib: { level: 9 } });
-
-        output.on('close', async () => {
-            await sock.sendMessage(chatId, { document: fs.readFileSync(outputZipPath), mimetype: 'application/zip', fileName: zipName }, { quoted: msg });
-            fs.unlinkSync(outputZipPath);
-        });
-        archive.pipe(output);
-        archive.directory(dbFolder, false);
-        archive.finalize();
-        return;
-    }
-
-    // 4. LIST & DEL
-    if (command === ".listhc") {
-        const files = fs.readdirSync(dbFolder);
-        if (files.length === 0) return sock.sendMessage(chatId, { text: "📂 Database Kosong." }, { quoted: msg });
+    // --- 4. LIST HC (.listhc) ---
+    if (cmd === ".listhc") {
+        const files = fs.readdirSync(dbHC);
+        if (files.length === 0) return sock.sendMessage(chatId, { text: "📂 Database Kosong." });
         let txt = `📂 *DATABASE CONFIG (${files.length})*\n\n` + files.map((f, i) => `${i + 1}. #${f}`).join("\n");
-        return sock.sendMessage(chatId, { text: txt }, { quoted: msg });
-    }
-    if (command === ".delhc") {
-        if (!isCreator || !args) return sock.sendMessage(chatId, { text: "⚠️ Contoh: .delhc namafile.hc" }, { quoted: msg });
-        const p = path.join(dbFolder, args);
-        if (fs.existsSync(p)) { fs.unlinkSync(p); return sock.sendMessage(chatId, { text: "✅ Dihapus." }, { quoted: msg }); }
-        else return sock.sendMessage(chatId, { text: "⚠️ File tidak ada." }, { quoted: msg });
+        txt += `\n\n_Gunakan #wintuneling untuk ambil semua._`;
+        return sock.sendMessage(chatId, { text: txt });
     }
 
-    // 5. GET FILE (#namafile)
-    if (text.startsWith("#") && !text.startsWith("#uploadhc") && !text.startsWith("#wintuneling")) {
-        const target = text.substring(1).trim();
-        const p = path.join(dbFolder, target);
-        if (fs.existsSync(p)) await sock.sendMessage(chatId, { document: fs.readFileSync(p), mimetype: 'application/octet-stream', fileName: target }, { quoted: msg });
+    // --- 5. GET SINGLE FILE (#namafile) ---
+    if (text.startsWith("#") && cmd !== "#uploadhc" && cmd !== "#wintuneling") {
+        const file = text.slice(1).trim();
+        const p = path.join(dbHC, file);
+        if (fs.existsSync(p)) {
+            return sock.sendMessage(chatId, { 
+                document: fs.readFileSync(p), 
+                fileName: file,
+                mimetype: 'application/octet-stream'
+            });
+        }
+    }
+
+    // --- 6. DELETE HC (.delhc) ---
+    if (cmd === ".delhc") {
+        if (!isCreator) return;
+        if (!args) return sock.sendMessage(chatId, { text: "⚠️ Contoh: .delhc namafile.hc" });
+        const p = path.join(dbHC, args);
+        if (fs.existsSync(p)) {
+            fs.unlinkSync(p);
+            return sock.sendMessage(chatId, { text: `✅ File *${args}* dihapus.` });
+        }
     }
 }
+
 export default hcFeatures;
