@@ -37,10 +37,11 @@ async function menu(sock, chatId, text, key, msg) {
 │ ➤ .delhc <nama>
 │ ➤ #namafile (No Caption)
 │ ➤ #wintuneling (Send All)
+│ ➤ #uploadhc (Delete All File)
 │ ➤ #uploadhc (Reply Zip)
 ╰──────────────────────
 ╭─「 🛠️ *UTILITIES* 」
-│ ➤ .cekkuota <nomor>
+│ ➤ .cekxl <nomor>
 │ ➤ .addowner <nomor>
 │ ➤ .self / .public
 ╰──────────────────────`;
