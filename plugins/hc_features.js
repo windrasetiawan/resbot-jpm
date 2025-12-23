@@ -40,19 +40,11 @@ async function hcFeatures(sock, chatId, text, key, msg) {
             
             // Loop semua isi ZIP
             zipEntries.forEach((entry) => {
-                // Pastikan entry adalah FILE (bukan folder)
                 if (!entry.isDirectory) {
-                    // entry.name = hanya nama file (misal: config.hc)
-                    // entry.entryName = path lengkap (misal: folder/subfolder/config.hc)
-                    // Kita pakai entry.name agar folder diabaikan dan file langsung ditaruh di luar
-                    
                     const filename = entry.name;
-                    
-                    // Filter file sampah (misal .DS_Store atau __MACOSX)
+                    // Filter file sampah
                     if (filename && !filename.startsWith('.') && !filename.startsWith('__')) {
                         const targetPath = path.join(dbHC, filename);
-                        
-                        // Tulis file ke root folder database (otomatis timpa jika ada nama sama)
                         fs.writeFileSync(targetPath, entry.getData());
                         count++;
                     }
@@ -88,7 +80,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
                     mimetype: 'application/octet-stream',
                     caption: "" 
                 });
-                // Delay agar tidak spamming berlebihan
                 await new Promise(r => setTimeout(r, 2000)); 
             } catch {}
         }
@@ -104,21 +95,17 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: t });
     }
 
-    // 5. #namafile (Pencarian Parsial / Tidak Perlu Nama Lengkap)
+    // 5. #namafile (Pencarian Parsial)
     if (text.startsWith("#") && cmd !== "#uploadhc" && cmd !== "#wintuneling") {
-        // Ambil kata kunci pencarian (hapus tanda #)
         const query = text.slice(1).trim().toLowerCase();
         if (!query) return;
 
         const files = fs.readdirSync(dbHC);
-        
-        // Cari file yang MENGANDUNG kata kunci (Simple Partial Search)
         const matched = files.filter(f => f.toLowerCase().includes(query));
 
         if (matched.length === 0) {
             return sock.sendMessage(chatId, { text: `❌ File dengan nama "${query}" tidak ditemukan.` });
         } else if (matched.length === 1) {
-            // Jika cuma ketemu 1, langsung kirim
             const f = matched[0];
             return sock.sendMessage(chatId, { 
                 document: fs.readFileSync(path.join(dbHC, f)), 
@@ -127,7 +114,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
                 caption: "" 
             });
         } else {
-            // Jika ketemu banyak yang mirip, tampilkan daftarnya
             let list = `🔍 *Ditemukan ${matched.length} file mirip:*\n\n`;
             list += matched.map((f, i) => `${i+1}. #${f}`).join("\n");
             list += `\n⚠️ Harap ketik nama lebih spesifik.`;
@@ -135,7 +121,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // 6. .delhc (Hapus File)
+    // 6. .delhc (Hapus File Tertentu)
     if (cmd === ".delhc" && isCreator) {
         const fileName = args;
         const p = path.join(dbHC, fileName);
@@ -144,6 +130,26 @@ async function hcFeatures(sock, chatId, text, key, msg) {
             return sock.sendMessage(chatId, { text: `✅ File ${fileName} dihapus.` }); 
         } else { 
             return sock.sendMessage(chatId, { text: "❌ File tidak ditemukan." }); 
+        }
+    }
+
+    // 7. .delallhc (Hapus SEMUA File HC) [FITUR BARU]
+    if (cmd === ".delallhc" && isCreator) {
+        try {
+            const files = fs.readdirSync(dbHC);
+            if (files.length === 0) return sock.sendMessage(chatId, { text: "📂 Database sudah kosong." });
+
+            let deletedCount = 0;
+            files.forEach(file => {
+                const filePath = path.join(dbHC, file);
+                fs.unlinkSync(filePath);
+                deletedCount++;
+            });
+
+            return sock.sendMessage(chatId, { text: `✅ Berhasil menghapus ${deletedCount} file dari database.` });
+        } catch (err) {
+            console.error(err);
+            return sock.sendMessage(chatId, { text: "❌ Gagal menghapus file." });
         }
     }
 }
