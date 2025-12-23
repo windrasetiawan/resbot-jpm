@@ -22,7 +22,7 @@ async function cekkuota(sock, chatId, text, key, msg) {
     if (msisdn.startsWith('8')) msisdn = '62' + msisdn;
 
     // Kirim pesan loading
-    await sock.sendMessage(chatId, { text: "⏳ *Sedang mengecek ke server Sidompul...*" }, { quoted: msg });
+    await sock.sendMessage(chatId, { text: "⏳ *Sedang mengecek kouta...*" }, { quoted: msg });
 
     // --- KONFIGURASI SESUAI KODE YANG WORK ---
     const config = {
