@@ -19,7 +19,7 @@ import { addGroupLinks } from "./lib/grupLinkStore.js";
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
 // PLUGINS
-import groupFeatures, { runGroupSchedule } from "./plugins/group_features.js"; // Import Scheduler
+import groupFeatures, { runGroupSchedule } from "./plugins/group_features.js"; 
 import admin from "./plugins/admin.js"; 
 import ping from "./plugins/ping.js";
 import hcFeatures from "./plugins/hc_features.js"; 
@@ -35,7 +35,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbFolder = path.join(__dirname, "DATABASE");
 if (!fs.existsSync(dbFolder)) fs.mkdirSync(dbFolder, { recursive: true });
 const settingsPath = path.join(dbFolder, "settings.json");
-if (!fs.existsSync(settingsPath)) fs.writeFileSync(settingsPath, JSON.stringify({ mode: 'public', antilink: [], autojoin: false, owners: [], schedule: {} }));
+
+// Default Settings jika file belum ada
+if (!fs.existsSync(settingsPath)) {
+    fs.writeFileSync(settingsPath, JSON.stringify({ mode: 'public', antilink: [], autojoin: false, owners: [], schedule: {} }));
+}
 
 const question = (text) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -78,7 +82,7 @@ async function startBot() {
             ChangeStatus(__dirname + "/sessions/", "connected");
             resumeAutoJPM(sock);
             
-            // --- JALANKAN JADWAL GRUP (CEK SETIAP 1 MENIT) ---
+            // --- JALANKAN JADWAL GRUP ---
             setInterval(() => {
                 runGroupSchedule(sock);
             }, 60000);
@@ -101,20 +105,33 @@ async function handleMsg(sock, msg) {
         const sender = jidNormalizedUser(isGroup ? (msg.key.participant || msg.key.remoteJid) : chatId);
         const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || "";
         
-        const db = JSON.parse(fs.readFileSync(settingsPath));
-        if (db.mode === 'self' && !isOwner(sender)) return;
+        // Baca Settings
+        let db = {};
+        try {
+            db = JSON.parse(fs.readFileSync(settingsPath));
+        } catch { return; }
 
-        // --- FITUR 1: AUTO JOIN GLOBAL ---
-        if (db.autojoin && text.includes("chat.whatsapp.com")) {
-            const code = text.match(/chat\.whatsapp\.com\/([0-9A-Za-z]{20,24})/);
-            if (code) {
-                await sock.groupAcceptInvite(code[1]).catch(() => {});
-                addGroupLinks(`https://chat.whatsapp.com/${code[1]}`);
-                console.log(clc.yellow(`🚀 Auto Join: ${code[1]}`));
+        // --- FITUR 1: AUTO JOIN GLOBAL (Ditaruh DI ATAS Cek Owner) ---
+        // Agar bot tetap join link grup meskipun mode Self atau dikirim bukan owner
+        if (db.autojoin && (text.includes("chat.whatsapp.com") || text.includes("wa.me"))) {
+            // Regex diperluas sedikit untuk menangkap berbagai variasi link
+            const code = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
+            if (code && code[1]) {
+                console.log(clc.yellow(`🚀 Mendeteksi Link Grup: ${code[1]}`));
+                await sock.groupAcceptInvite(code[1])
+                    .then(() => {
+                        addGroupLinks(`https://chat.whatsapp.com/${code[1]}`);
+                        console.log(clc.green(`✅ Berhasil Join!`));
+                    })
+                    .catch(() => console.log(clc.red(`❌ Gagal Join (Mungkin Link Reset/Penuh)`)));
             }
         }
 
-        // --- FITUR 2: ROUTER PLUGINS ---
+        // --- CEK MODE SELF ---
+        // Jika Self Mode ON, hanya Owner yang bisa lanjut ke perintah di bawah
+        if (db.mode === 'self' && !isOwner(sender)) return;
+
+        // --- ROUTER PLUGINS ---
         await Promise.all([
             ping(sock, chatId, text, msg.key, msg),
             menu(sock, chatId, text, msg.key, msg),
