@@ -93,7 +93,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
 
         if (validFiles.length === 0) return sock.sendMessage(chatId, { text: "📂 Database Kosong." });
         
-        await sock.sendMessage(chatId, { text: `🚀 Mengirim ${validFiles.length} file...` });
+        // [MODIFIKASI] Pesan "Mengirim..." DIHAPUS
 
         for (const f of validFiles) {
             try {
@@ -103,12 +103,12 @@ async function hcFeatures(sock, chatId, text, key, msg) {
                     mimetype: 'application/octet-stream',
                     caption: "" 
                 });
-                await new Promise(r => setTimeout(r, 2000)); // Delay
+                await new Promise(r => setTimeout(r, 2000)); // Delay tetap ada agar tidak spam flood
             } catch {}
         }
-        return sock.sendMessage(chatId, { text: "✅ Selesai." });
+        // [MODIFIKASI] Pesan "Selesai" DIHAPUS
+        return;
     }
-
     // ==========================================
     // 4. .listhc (Cek Daftar File)
     // ==========================================
