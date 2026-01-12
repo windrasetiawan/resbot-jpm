@@ -1,23 +1,12 @@
-import { spintax, readWhitelist, downloadAndSaveMedia } from "../lib/utils.js";
+import { spintax, readWhitelist } from "../lib/utils.js";
 import { saveStatus } from "../lib/resumeAutoJPM.js";
-import fs from "fs";
 
 // ===========================================================
-// KONFIGURASI LINK & GAMBAR
+// KONFIGURASI LINK (Wajib Diisi)
 // ===========================================================
 const CONFIG = {
-    // 1. Link Grup Default (Dipakai jika bot tidak menemukan link di teks)
-    //    Ganti dengan Link Grup WhatsApp Anda!
-    LINK_GRUP_MANUAL: "https://chat.whatsapp.com/IRaOCbFdgaO6Rmx0tsgyyb", 
-    
-    // 2. Gambar Default (Dipakai jika Anda lupa me-reply gambar)
-    URL_GAMBAR: "https://i.postimg.cc/Xq1L1tCM/file-000000008a28622fab894f9b3c177a14.png",
-
-    // 3. Judul pada Tombol (SUDAH DIUBAH)
-    JUDUL_TOMBOL: "Bergabung ke grup",
-    
-    // 4. Deskripsi kecil di bawah judul
-    DESKRIPSI_TOMBOL: "Klik Disini Untuk Join"
+    // Masukkan Link Grup Anda di sini
+    LINK_GRUP: "https://chat.whatsapp.com/IRaOCbFdgaO6Rmx0tsgyyb" 
 };
 
 async function autojpm(sock, chatId, text, key, msg) {
@@ -42,37 +31,23 @@ async function autojpm(sock, chatId, text, key, msg) {
         
         global.autojpmRunning = true;
         
-        // A. SIAPKAN THUMBNAIL
-        let thumbBuffer = null;
-        try {
-            const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-            if (q?.imageMessage) {
-                const p = await downloadAndSaveMedia(sock, q, "temp_jpm_thumb");
-                thumbBuffer = fs.readFileSync(p);
-                fs.unlinkSync(p);
-            } else {
-                const res = await fetch(CONFIG.URL_GAMBAR);
-                const arrayBuffer = await res.arrayBuffer();
-                thumbBuffer = Buffer.from(arrayBuffer);
-            }
-        } catch (e) {
-            console.error("Gagal load thumbnail:", e);
-        }
-
-        // B. DETEKSI LINK GRUP
+        // Cek Link: Apakah user mengetik link di pesan? Jika tidak, ambil dari CONFIG
+        // Regex ini mencari link grup whatsapp
         const linkMatch = val.match(/(https?:\/\/chat\.whatsapp\.com\/[a-zA-Z0-9]{5,})/);
-        const finalLink = linkMatch ? linkMatch[0] : CONFIG.LINK_GRUP_MANUAL;
+        const finalLink = linkMatch ? linkMatch[0] : CONFIG.LINK_GRUP;
 
+        // Validasi: Jika link masih default (belum diganti)
         if (finalLink.includes("GantiLinkIni")) {
             sock.sendMessage(chatId, { text: "⚠️ PERINGATAN: Link Grup belum di-setting di script (plugins/autojpm.js)!" });
         }
 
-        saveStatus(true, val, thumbBuffer ? thumbBuffer.toString('base64') : null);
+        // Simpan status (Tanpa gambar, karena kita pakai mode native)
+        saveStatus(true, val, null);
 
-        let statusMsg = `🚀 *AUTO JPM GRUP AKTIF*\n\n`;
-        statusMsg += `📝 Pesan: ${val}\n`;
-        statusMsg += `🔗 Tujuan Tombol: ${finalLink}\n`;
-        statusMsg += `⏱️ Jeda: ${global.autojpm.loopDelayHours ? global.autojpm.loopDelayHours * 60 : 60} menit`;
+        let statusMsg = `🚀 *AUTO JPM NATIVE AKTIF*\n\n`;
+        statusMsg += `🔗 Link Grup: ${finalLink}\n`;
+        statusMsg += `⏱️ Jeda: ${global.autojpm.loopDelayHours ? global.autojpm.loopDelayHours * 60 : 60} menit\n\n`;
+        statusMsg += `ℹ️ *Info:* Menggunakan tampilan bawaan WhatsApp (Link Preview).`;
         sock.sendMessage(chatId, { text: statusMsg });
         
         // --- MULAI LOOPING ---
@@ -85,22 +60,20 @@ async function autojpm(sock, chatId, text, key, msg) {
                 if (!global.autojpmRunning) break;
                 
                 try {
-                    // C. KIRIM PESAN DENGAN CARD (TOMBOL)
+                    // LOGIKA PENGIRIMAN "NATIVE"
+                    // Kita gabungkan teks user dengan Link Grup agar preview muncul
+                    let pesanFinal = spintax(val);
+
+                    // Jika di dalam teks pesan belum ada linknya, kita tempelkan link di bawahnya
+                    // Agar preview tombol muncul
+                    if (!pesanFinal.includes("chat.whatsapp.com")) {
+                        pesanFinal += `\n\n${finalLink}`;
+                    }
+
+                    // Kirim Teks Murni (Tanpa externalAdReply)
+                    // WhatsApp penerima akan otomatis membuat preview tombol "Lihat Grup"
                     await sock.sendMessage(g.id, { 
-                        text: spintax(val),
-                        contextInfo: {
-                            forwardingScore: 999,
-                            isForwarded: true,
-                            externalAdReply: {
-                                showAdAttribution: true, 
-                                title: CONFIG.JUDUL_TOMBOL, // "Bergabung ke grup"          
-                                body: CONFIG.DESKRIPSI_TOMBOL, 
-                                thumbnail: thumbBuffer,      
-                                sourceUrl: finalLink,      
-                                mediaType: 1,
-                                renderLargerThumbnail: true 
-                            }
-                        }
+                        text: pesanFinal
                     });
 
                 } catch (e) {}
@@ -123,4 +96,4 @@ async function autojpm(sock, chatId, text, key, msg) {
     }
 }
 export default autojpm;
-            
+                                                
