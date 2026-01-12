@@ -29,6 +29,7 @@ import jpm from "./plugins/jpm.js";
 import pushkontak from "./plugins/pushkontak.js";
 import autojpm from "./plugins/autojpm.js";
 import listgc from "./plugins/listgc.js"; 
+import tiktok from "./plugins/tiktok.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -98,6 +99,7 @@ async function startBot() {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return;
         await handleMsg(sock, msg);
+        await tiktok(sock, chatId, text, msg.key, msg);
     });
 }
 
