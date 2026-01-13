@@ -29,7 +29,7 @@ import jpm from "./plugins/jpm.js";
 import pushkontak from "./plugins/pushkontak.js";
 import autojpm from "./plugins/autojpm.js";
 import listgc from "./plugins/listgc.js"; 
-import tiktok from "./plugins/tiktok.js";
+import tiktok from "./plugins/tiktok.js"; // ✅ Import TikTok
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -79,9 +79,8 @@ async function startBot() {
         if (connection === "close") {
             const reason = lastDisconnect?.error?.output?.statusCode;
             if (reason !== DisconnectReason.loggedOut) {
-                // --- FIX RECONNECT LOOPING ---
                 console.log(clc.red("⚠️ Koneksi terputus. Mencoba menyambungkan ulang dalam 5 detik..."));
-                setTimeout(startBot, 5000); // Jeda 5 detik sebelum reconnect
+                setTimeout(startBot, 5000); 
             } else {
                 console.log(clc.red("❌ Sesi Logged Out. Silakan scan ulang/hapus folder session."));
             }
@@ -99,12 +98,13 @@ async function startBot() {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return;
         await handleMsg(sock, msg);
-        await tiktok(sock, chatId, text, msg.key, msg);
+        // ❌ HAPUS tiktok(...) DARI SINI AGAR TIDAK ERROR
     });
 }
 
 async function handleMsg(sock, msg) {
     try {
+        // ✅ DISINI TEMPAT chatId & text DIDEFINISIKAN
         const chatId = msg.key.remoteJid;
         const isGroup = chatId.endsWith('@g.us');
         const sender = jidNormalizedUser(isGroup ? (msg.key.participant || msg.key.remoteJid) : chatId);
@@ -133,10 +133,12 @@ async function handleMsg(sock, msg) {
             jpm(sock, sender, text, msg.key, msg),
             pushkontak(sock, sender, text, msg.key, msg),
             autojpm(sock, chatId, text, msg.key, msg),
-            listgc(sock, chatId, text, msg.key, msg) 
+            listgc(sock, chatId, text, msg.key, msg),
+            tiktok(sock, chatId, text, msg.key, msg) // ✅ PINDAHKAN TIKTOK KESINI
         ]);
 
     } catch (e) {}
 }
 
 startBot();
+                                                  
