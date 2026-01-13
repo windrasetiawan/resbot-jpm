@@ -29,7 +29,8 @@ import jpm from "./plugins/jpm.js";
 import pushkontak from "./plugins/pushkontak.js";
 import autojpm from "./plugins/autojpm.js";
 import listgc from "./plugins/listgc.js"; 
-import tiktok from "./plugins/tiktok.js"; // ✅ Import TikTok
+import tiktok from "./plugins/tiktok.js";
+import igdl from "./plugins/igdl.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -134,7 +135,8 @@ async function handleMsg(sock, msg) {
             pushkontak(sock, sender, text, msg.key, msg),
             autojpm(sock, chatId, text, msg.key, msg),
             listgc(sock, chatId, text, msg.key, msg),
-            tiktok(sock, chatId, text, msg.key, msg) // ✅ PINDAHKAN TIKTOK KESINI
+            tiktok(sock, chatId, text, msg.key, msg),
+            igdl(sock, chatId, text, msg.key, msg) 
         ]);
 
     } catch (e) {}
