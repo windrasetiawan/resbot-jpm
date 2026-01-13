@@ -10,23 +10,22 @@ async function tiktok(sock, chatId, text, key, msg) {
     await sock.sendMessage(chatId, { text: "⏳ Sedang memproses..." }, { quoted: msg });
 
     try {
-        // Request ke API
         const response = await fetch(`https://zelapioffciall.koyeb.app/download/tiktok?url=${url}`);
         const json = await response.json();
 
-        // --- DEBUGGING (Cek Terminal VPS Anda) ---
-        console.log("RESPON API TIKTOK:", JSON.stringify(json, null, 2));
-        // -----------------------------------------
-
-        // Validasi Status
+        // Cek Status
         if (!json.status || !json.result) {
-            return sock.sendMessage(chatId, { text: "❌ Gagal: API Error atau Link Private." });
+            return sock.sendMessage(chatId, { text: "❌ Gagal: Respon API kosong atau error." });
         }
 
         const data = json.result;
-        const caption = `✅ *TIKTOK DOWNLOADER*\n👤 ${data.author || "-"}\n📝 ${data.title || "-"}`;
+        
+        // Ambil Metadata (Info Video) sesuai struktur JSON terbaru
+        const author = data.metadata?.creator || data.creator || "-";
+        const title = data.metadata?.title || data.metadata?.description || "-";
+        const caption = `✅ *TIKTOK DOWNLOADER*\n👤 Creator: ${author}\n📝 Desc: ${title}`;
 
-        // 1. Cek Apakah Slide Foto?
+        // 1. Cek Slide Foto (Images)
         if (data.images && data.images.length > 0) {
             for (let img of data.images) {
                 await sock.sendMessage(chatId, { image: { url: img } });
@@ -34,21 +33,29 @@ async function tiktok(sock, chatId, text, key, msg) {
             return sock.sendMessage(chatId, { text: "✅ Selesai mengirim slide." });
         }
 
-        // 2. Cek Apakah Video? (Cari di semua kemungkinan key)
-        const vid = data.video || data.play || data.hdplay || data.nowm || data.without_watermark || data.url;
+        // 2. Cek Video (FIX: Ambil dari array 'urls')
+        let videoUrl = null;
 
-        if (vid) {
+        // Coba ambil dari 'urls' urutan pertama (paling umum di API ini)
+        if (data.urls && Array.isArray(data.urls) && data.urls.length > 0) {
+            videoUrl = data.urls[0];
+        } 
+        // Backup: Coba cari key lain siapa tau format berubah lagi
+        else {
+            videoUrl = data.video || data.play || data.hdplay; 
+        }
+
+        if (videoUrl) {
             await sock.sendMessage(chatId, { 
-                video: { url: vid }, 
+                video: { url: videoUrl }, 
                 caption: caption 
             }, { quoted: msg });
         } else {
-            // Jika video tetap tidak ketemu, kirim pesan error + cek terminal
-            sock.sendMessage(chatId, { text: "❌ Link video tidak ditemukan. Cek terminal untuk detail JSON." });
+            sock.sendMessage(chatId, { text: "❌ Link video tidak ditemukan dalam respon API." });
         }
 
     } catch (e) {
-        console.error(e);
+        console.error("TikTok Error:", e);
         sock.sendMessage(chatId, { text: "❌ Terjadi kesalahan sistem." });
     }
 }
