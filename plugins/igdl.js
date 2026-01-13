@@ -1,5 +1,21 @@
 import fetch from "node-fetch";
 
+// FUNGSI HELPER: Download File jadi Buffer (Tembus Proteksi 403)
+const getBuffer = async (url) => {
+    try {
+        const res = await fetch(url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+                "Referer": "https://www.instagram.com/"
+            }
+        });
+        if (!res.ok) throw new Error(`Gagal download: HTTP ${res.status}`);
+        return await res.buffer();
+    } catch (e) {
+        throw e;
+    }
+};
+
 async function igdl(sock, chatId, text, key, msg) {
     const cmd = text.split(" ")[0].toLowerCase();
     if (cmd !== ".ig" && cmd !== ".igdl") return;
@@ -7,57 +23,64 @@ async function igdl(sock, chatId, text, key, msg) {
     let url = text.split(" ")[1];
     if (!url) return sock.sendMessage(chatId, { text: "⚠️ Masukkan link Instagram!" });
 
-    // Bersihkan URL dari sampah tracking
+    // Bersihkan Link
     url = url.split("?")[0];
 
-    await sock.sendMessage(chatId, { text: "⏳ Sedang memproses IG..." }, { quoted: msg });
+    await sock.sendMessage(chatId, { text: "⏳ Sedang Memproses IG..." }, { quoted: msg });
 
     try {
-        // Request API
-        const response = await fetch(`https://api-faa.my.id/faa/igdl?url=${url}`, {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            }
-        });
+        // 1. Request ke API FAA
+        const response = await fetch(`https://api-faa.my.id/faa/igdl?url=${url}`);
         const json = await response.json();
 
-        // Cek terminal jika ingin lihat struktur data asli
-        console.log("RESPON IG:", JSON.stringify(json, null, 2));
+        // Cek JSON di terminal untuk debugging
+        console.log("RESPON IG (FAA):", JSON.stringify(json, null, 2));
 
         if (!json.result) {
-            return sock.sendMessage(chatId, { text: "❌ Gagal: Konten Private atau API Error." });
+            return sock.sendMessage(chatId, { text: "❌ Gagal mengambil data. Akun private atau API Down." });
         }
 
         let mediaData = json.result;
-        // Pastikan formatnya Array
+        // Pastikan jadi Array
         if (!Array.isArray(mediaData)) mediaData = [mediaData];
 
-        // --- AMBIL METADATA (Username & Caption) ---
-        // Karena struktur API beda-beda, kita coba ambil dari berbagai kemungkinan key
-        // Kalau tidak ada, defaultnya "-"
-        const meta = mediaData[0]; // Ambil info dari slide pertama
-        const username = meta.username || meta.owner || meta.author || "-"; 
-        const postCaption = meta.caption || meta.title || "-";
+        // Ambil Info Caption & Username (Jika ada)
+        const meta = mediaData[0];
+        const username = meta.username || meta.owner || "-";
+        const captionText = meta.caption || meta.title || "Instagram Downloader";
+        
+        const finalCaption = `✅ *Berhasil Didownload*\n👤 ${username}\n📝 ${captionText}`;
 
-        // Format Pesan (Style TikTok)
-        const msgCaption = `✅ *Berhasil Didownload*\n👤 Username: ${username}\n📝 Caption: ${postCaption}`;
+        // 2. Loop Download & Kirim
+        let successCount = 0;
 
-        // Kirim Media
         for (let i = 0; i < mediaData.length; i++) {
             let item = mediaData[i];
             let mediaUrl = item.url || item.download_url || (typeof item === 'string' ? item : null);
-            
-            if (mediaUrl) {
-                // Hanya slide pertama yang dikasih caption panjang
-                // Slide sisanya dikosongkan agar chat tidak penuh spam teks
-                let sendCaption = (i === 0) ? msgCaption : "";
 
-                if (mediaUrl.includes(".mp4") || item.type === 'video') {
-                    await sock.sendMessage(chatId, { video: { url: mediaUrl }, caption: sendCaption }, { quoted: msg });
-                } else {
-                    await sock.sendMessage(chatId, { image: { url: mediaUrl }, caption: sendCaption }, { quoted: msg });
+            if (mediaUrl) {
+                try {
+                    // --- DOWNLOAD KE BUFFER (KUNCI PERBAIKAN) ---
+                    const buffer = await getBuffer(mediaUrl);
+                    
+                    // Hanya slide pertama yang dikasih caption panjang
+                    const cap = (i === 0) ? finalCaption : "";
+
+                    if (mediaUrl.includes(".mp4") || item.type === 'video') {
+                        await sock.sendMessage(chatId, { video: buffer, caption: cap }, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(chatId, { image: buffer, caption: cap }, { quoted: msg });
+                    }
+                    successCount++;
+
+                } catch (err) {
+                    console.log(`Gagal kirim slide ke-${i}: ${err}`);
                 }
             }
+        }
+
+        if (successCount === 0) {
+            sock.sendMessage(chatId, { text: "❌ Gagal mendownload file media (Error 403/Link Expired)." });
         }
 
     } catch (e) {
