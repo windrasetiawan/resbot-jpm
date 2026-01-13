@@ -23,7 +23,7 @@ async function tiktok(sock, chatId, text, key, msg) {
         // Ambil Metadata (Info Video) sesuai struktur JSON terbaru
         const author = data.metadata?.creator || data.creator || "-";
         const title = data.metadata?.title || data.metadata?.description || "-";
-        const caption = `✅ *Tiktok Berhasil Didownload*\n👤 Creator: ${author}\n📝 Desc: ${title}`;
+        const caption = `✅ *Berhasil Didownload*\n👤 Creator: ${author}\n📝 Desc: ${title}`;
 
         // 1. Cek Slide Foto (Images)
         if (data.images && data.images.length > 0) {
