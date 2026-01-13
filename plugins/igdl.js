@@ -40,7 +40,7 @@ async function igdl(sock, chatId, text, key, msg) {
 
     url = url.split("?")[0];
 
-    await sock.sendMessage(chatId, { text: "⏳ Sedang Memproses..." }, { quoted: msg });
+    await sock.sendMessage(chatId, { text: "⏳ Sedang Memproses IG..." }, { quoted: msg });
 
     try {
         const response = await fetch(`https://api-faa.my.id/faa/igdl?url=${url}`);
@@ -64,7 +64,7 @@ async function igdl(sock, chatId, text, key, msg) {
         const username = meta.username || "-";
         const captionText = meta.caption || "-";
         
-        const finalCaption = `✅ *Berhasil Didownload*\n👤 ${username}\n📝 ${captionText}`;
+        const finalCaption = `✅ *Berhasil Didownload*\nUsername : ${username}\nCaption : ${captionText}`;
 
         // 3. Loop Download & Kirim
         let successCount = 0;
