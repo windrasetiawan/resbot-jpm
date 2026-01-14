@@ -64,7 +64,7 @@ async function startBot() {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
-        browser: ["Mac OS", "Chrome", "3.0"],
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
         generateHighQualityLinkPreview: true,
     });
 
