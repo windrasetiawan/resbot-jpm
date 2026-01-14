@@ -1,4 +1,6 @@
 import fs from "fs";
+// Import fungsi isOwner dari utils agar Creator juga bisa akses
+import { isOwner } from "../lib/utils.js"; 
 
 async function owner(sock, chatId, text, key, msg) {
     const cmd = text.split(" ")[0].toLowerCase();
@@ -6,42 +8,44 @@ async function owner(sock, chatId, text, key, msg) {
 
     if (!isOwnerCmd) return;
 
-    // Path Database
+    // Tentukan siapa pengirim pesan
+    const sender = msg.key.participant || msg.key.remoteJid;
+
+    // --- CEK PERMISSION (REVISI) ---
+    // Sekarang cek: Apakah Pengirim = Bot (fromMe) ATAU Pengirim = Owner Terdaftar?
+    if (!key.fromMe && !isOwner(sender)) {
+        return sock.sendMessage(chatId, { text: "❌ Perintah ini khusus Owner/Creator Bot!" });
+    }
+
     const dbPath = "./DATABASE/settings.json";
 
-    // Fungsi Helper: Baca Database
     const readDB = () => {
         try {
+            if (!fs.existsSync(dbPath)) return { owners: [] };
             return JSON.parse(fs.readFileSync(dbPath));
         } catch (e) {
             return { owners: [] };
         }
     };
 
-    // Fungsi Helper: Tulis Database
     const writeDB = (data) => {
         fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
     };
 
-    // --- CEK PERMISSION ---
-    // Hanya Owner Utama (yang pegang HP bot / Creator) yang boleh pakai perintah ini
-    if (!key.fromMe) return sock.sendMessage(chatId, { text: "❌ Perintah ini khusus Pemilik Bot!" });
-
     // --- 1. ADD OWNER ---
     if (cmd === ".addowner") {
         let number;
-        // Cek Reply
+        // Prioritas 1: Reply Chat
         if (msg.message.extendedTextMessage?.contextInfo?.participant) {
             number = msg.message.extendedTextMessage.contextInfo.participant.split("@")[0];
         } 
-        // Cek Input Text
+        // Prioritas 2: Input Text (.addowner 628xxx)
         else {
             number = text.split(" ")[1];
         }
 
         if (!number) return sock.sendMessage(chatId, { text: "⚠️ Format salah.\nReply chat orangnya atau ketik: .addowner 628xx" });
 
-        // Bersihkan Nomor (Hapus spasi, strip, ganti 08 jadi 628)
         number = number.replace(/\D/g, '');
         if (number.startsWith('0')) number = '62' + number.slice(1);
 
@@ -49,12 +53,16 @@ async function owner(sock, chatId, text, key, msg) {
         if (!db.owners) db.owners = [];
 
         if (db.owners.includes(number)) {
-            return sock.sendMessage(chatId, { text: "⚠️ Nomor sudah ada di list owner." });
+            return sock.sendMessage(chatId, { text: "⚠️ Nomor tersebut sudah menjadi Owner." });
         }
 
         db.owners.push(number);
         writeDB(db);
-        sock.sendMessage(chatId, { text: `✅ Sukses menambah owner baru: @${number}`, mentions: [number + "@s.whatsapp.net"] });
+        
+        await sock.sendMessage(chatId, { 
+            text: `✅ Sukses menambahkan owner baru:\n👑 @${number}`, 
+            mentions: [number + "@s.whatsapp.net"] 
+        });
     }
 
     // --- 2. DEL OWNER ---
@@ -66,7 +74,7 @@ async function owner(sock, chatId, text, key, msg) {
             number = text.split(" ")[1];
         }
 
-        if (!number) return sock.sendMessage(chatId, { text: "⚠️ Format salah.\nReply chat orangnya atau ketik: .delowner 628xx" });
+        if (!number) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor yang akan dihapus." });
 
         number = number.replace(/\D/g, '');
         if (number.startsWith('0')) number = '62' + number.slice(1);
@@ -78,7 +86,10 @@ async function owner(sock, chatId, text, key, msg) {
         if (index > -1) {
             db.owners.splice(index, 1);
             writeDB(db);
-            sock.sendMessage(chatId, { text: `✅ Sukses menghapus owner: @${number}`, mentions: [number + "@s.whatsapp.net"] });
+            await sock.sendMessage(chatId, { 
+                text: `✅ Nomor @${number} telah dihapus dari list Owner.`, 
+                mentions: [number + "@s.whatsapp.net"] 
+            });
         } else {
             sock.sendMessage(chatId, { text: "⚠️ Nomor tidak ditemukan di database." });
         }
@@ -96,9 +107,8 @@ async function owner(sock, chatId, text, key, msg) {
             txt += `${i + 1}. @${num}\n`;
         });
 
-        sock.sendMessage(chatId, { text: txt, mentions: list.map(n => n + "@s.whatsapp.net") });
+        await sock.sendMessage(chatId, { text: txt, mentions: list.map(n => n + "@s.whatsapp.net") });
     }
 }
 
 export default owner;
-  
