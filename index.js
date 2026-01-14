@@ -30,6 +30,7 @@ import pushkontak from "./plugins/pushkontak.js";
 import autojpm from "./plugins/autojpm.js";
 import listgc from "./plugins/listgc.js"; 
 import tiktok from "./plugins/tiktok.js";
+import owner from "./plugins/owner.js";
 import igdl from "./plugins/igdl.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -136,6 +137,7 @@ async function handleMsg(sock, msg) {
             autojpm(sock, chatId, text, msg.key, msg),
             listgc(sock, chatId, text, msg.key, msg),
             tiktok(sock, chatId, text, msg.key, msg),
+            owner(sock, chatId, text, msg.key, msg),
             igdl(sock, chatId, text, msg.key, msg) 
         ]);
 
