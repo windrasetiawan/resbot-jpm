@@ -1,7 +1,7 @@
 import os from 'os';
 import fs from 'fs';
 
-// Helper: Format Uptime (Detik -> Hari, Jam, Menit, Detik)
+// Helper: Format Uptime
 const formatUptime = (seconds) => {
     seconds = Number(seconds);
     var d = Math.floor(seconds / (3600 * 24));
@@ -13,8 +13,17 @@ const formatUptime = (seconds) => {
 
 async function menu(sock, chatId, text, key, msg) {
     if (!text.toLowerCase().startsWith(".menu")) return;
+
+    // 🔥 1. REACTION (Biar terlihat interaktif)
+    await sock.sendMessage(chatId, { react: { text: "⏳", key: msg.key } });
+
+    // 🔥 2. SIMULASI MENGETIK (PENTING ANTI-BAN)
+    await sock.sendPresenceUpdate('composing', chatId);
+
+    // 🔥 3. DELAY RANDOM (1-2 Detik)
+    await new Promise(r => setTimeout(r, 1000 + Math.random() * 1000));
     
-    // 1. Logic Ucapan (Selamat Pagi/Siang/Malam)
+    // Logic Data
     const date = new Date();
     const hour = date.getHours();
     let ucapan = "Malam 🌑";
@@ -22,33 +31,26 @@ async function menu(sock, chatId, text, key, msg) {
     else if (hour >= 11 && hour < 15) ucapan = "Siang 🌤️";
     else if (hour >= 15 && hour < 18) ucapan = "Sore 🌇";
 
-    // 2. Logic Jam (WIB)
     const jam = date.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' });
-
-    // 3. Logic Hardware Info (RAM, Uptime, OS)
     const uptime = formatUptime(os.uptime());
     const ram = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1) + "GB";
     
-    // -- Deteksi Nama OS (Ubuntu/Debian/dll) --
-    let osName = os.type(); // Default (misal: Linux / Windows_NT)
+    let osName = os.type(); 
     try {
         if (fs.existsSync('/etc/os-release')) {
             const data = fs.readFileSync('/etc/os-release', 'utf8');
-            // Mencari baris PRETTY_NAME="Ubuntu 20.04..."
             const match = data.match(/PRETTY_NAME="([^"]+)"/);
             if (match) osName = match[1]; 
         }
     } catch (e) { }
 
-    // 4. Cek Mode Public/Self
     let mode = 'PUBLIC';
     try {
         const db = JSON.parse(fs.readFileSync('./DATABASE/settings.json'));
         mode = db.mode ? db.mode.toUpperCase() : 'PUBLIC';
     } catch { }
 
-    // 5. Susunan Menu
-    const txt = `╭───「 *WINTUNELINGVPN* 」
+    const txt = `╭───「 *WINTUNELING VPN* 」
 │ 👋 *Selamat ${ucapan}*
 │ 🤖 *Status*: ONLINE
 │ 🛡️ *Mode*: ${mode}
@@ -86,6 +88,10 @@ async function menu(sock, chatId, text, key, msg) {
 │ ➤ .self / .public
 ╰──────────────────────`;
 
+    // Kirim Pesan
     await sock.sendMessage(chatId, { text: txt }, { quoted: msg });
+    
+    // Berhenti Mengetik
+    await sock.sendPresenceUpdate('paused', chatId);
 }
 export default menu;
