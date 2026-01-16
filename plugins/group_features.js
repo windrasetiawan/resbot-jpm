@@ -106,11 +106,11 @@ export async function runGroupSchedule(sock) {
         try {
             if (t.open === now) {
                 await sock.groupSettingUpdate(id, 'not_announcement');
-                await sock.sendMessage(id, { text: "🔓 *Grub sudah di buka kembali (Selamat Pagi)*" });
+                await sock.sendMessage(id, { text: "🔓 *Grub sudah di buka kembali (Selamat Pagi)*\n> BY WINTUNELING VPN" });
             }
             if (t.close === now) {
                 await sock.groupSettingUpdate(id, 'announcement');
-                await sock.sendMessage(id, { text: "🔒 *Grup ditutup (Selamat Tidur)*" });
+                await sock.sendMessage(id, { text: "🔒 *Grup ditutup (Selamat Tidur)*\n> BY WINTUNELING VPN" });
             }
         } catch {}
     }
