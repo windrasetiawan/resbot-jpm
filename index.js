@@ -3,21 +3,20 @@ import {
     useMultiFileAuthState,
     DisconnectReason,
     makeCacheableSignalKeyStore,
-    fetchLatestBaileysVersion
+    fetchLatestBaileysVersion,
+    Browsers
 } from "@whiskeysockets/baileys";
 import fs from "fs";
 import pino from "pino";
 import path from "path";
 import { fileURLToPath } from "url";
 import readline from "readline";
-import qrcode from "qrcode-terminal"; // Library untuk menampilkan QR
+import qrcode from "qrcode-terminal";
 
-// -- SETUP PATH --
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// -- IMPORT PLUGINS --
-// Pastikan semua file ini ada di folder plugins/
+// Import Plugins
 import ping from "./plugins/ping.js";
 import menu from "./plugins/menu.js";
 import admin from "./plugins/admin.js";
@@ -43,27 +42,17 @@ if (!fs.existsSync(settingsPath)) {
     fs.writeFileSync(settingsPath, JSON.stringify({ mode: 'public', antilink: [], autojoin: false, owners: [], schedule: {} }));
 }
 
-// -- FUNGSI INPUT TERMINAL --
 const question = (text) => {
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-    });
-    return new Promise((resolve) => {
-        rl.question(text, (answer) => {
-            rl.close();
-            resolve(answer);
-        });
-    });
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    return new Promise((resolve) => { rl.question(text, (res) => { rl.close(); resolve(res); }); });
 };
 
-// -- FUNGSI UTAMA --
 async function start() {
     const { state, saveCreds } = await useMultiFileAuthState("sessions");
     const { version } = await fetchLatestBaileysVersion();
     const logger = pino({ level: "silent" });
 
-    // -- MENU PILIHAN LOGIN --
+    // -- MENU LOGIN --
     console.clear();
     console.log(`
 ╭────────────────────────────────╮
@@ -72,60 +61,55 @@ async function start() {
 1. 📷 Login dengan QR Code
 2. 🔢 Login dengan Pairing Code
 ──────────────────────────────────`);
-    
+
     let usePairingCode = false;
     let phoneNumber = "";
 
-    // Cek apakah belum login?
     if (!state.creds.me && !state.creds.registered) {
         const choice = await question("👉 Pilih Metode Login (1/2): ");
         if (choice.trim() === "2") {
             usePairingCode = true;
             phoneNumber = await question("📱 Masukkan Nomor Bot (628xx): ");
-            phoneNumber = phoneNumber.replace(/\D/g, ""); // Bersihkan non-angka
+            phoneNumber = phoneNumber.replace(/\D/g, "");
         } else {
             console.log("📷 Menunggu QR Code...");
         }
     }
 
-    // -- CONFIG SOCKET --
     const sock = makeWASocket({
         version,
         logger,
-        printQRInTerminal: false, // MATIKAN BAWAAN (Karena Error Deprecated)
+        printQRInTerminal: false, // Kita handle manual biar tidak error
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
-        // Browser Linux Standar (Lebih Stabil)
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        // 🔥 ANTI-BANNED CONFIG: Menyamar jadi Chrome di Mac OS
+        browser: Browsers.macOS("Desktop"), 
         generateHighQualityLinkPreview: true,
         connectTimeoutMs: 60000,
         keepAliveIntervalMs: 10000,
-        markOnlineOnConnect: true,
+        markOnlineOnConnect: true, // Online saat connect
+        syncFullHistory: false, // Matikan sync full history biar tidak berat/dicurigai
     });
 
-    // -- LOGIC PAIRING CODE --
     if (usePairingCode && !sock.authState.creds.registered) {
-        console.log(`⏳ Meminta Pairing Code ke WhatsApp...`);
+        console.log(`⏳ Meminta Pairing Code...`);
         setTimeout(async () => {
             try {
                 const code = await sock.requestPairingCode(phoneNumber);
-                console.log(`\n🔑 KODE PAIRING ANDA: \x1b[32m${code}\x1b[0m\n`);
+                console.log(`\n🔑 KODE PAIRING: \x1b[32m${code}\x1b[0m\n`);
             } catch (e) {
-                console.log("❌ Gagal meminta kode. Cek nomor HP atau IP kena limit.");
+                console.log("❌ Gagal. Cek nomor/IP.");
             }
         }, 3000);
     }
-
-    // -- EVENT HANDLER --
 
     sock.ev.on("creds.update", saveCreds);
 
     sock.ev.on("connection.update", async (update) => {
         const { connection, lastDisconnect, qr } = update;
         
-        // MANAGE QR CODE MANUAL (Pengganti printQRInTerminal)
         if (qr && !usePairingCode) {
             console.log("Scan QR di bawah ini:");
             qrcode.generate(qr, { small: true });
@@ -133,13 +117,11 @@ async function start() {
 
         if (connection === "close") {
             const reason = lastDisconnect?.error?.output?.statusCode;
-            console.log("⚠️ Koneksi Terputus. Reason:", reason);
-            
             if (reason === DisconnectReason.loggedOut) {
-                console.log("❌ Sesi Logout. Hapus folder sessions & login ulang.");
+                console.log("❌ Sesi Logout. Hapus folder 'sessions' dan login ulang.");
             } else {
                 console.log("🔄 Reconnecting...");
-                start(); // Auto Reconnect
+                start();
             }
         } else if (connection === "open") {
             console.log("✅ BOT TERHUBUNG!");
@@ -162,10 +144,15 @@ async function start() {
             const chatId = msg.key.remoteJid;
             const sender = msg.key.participant || msg.key.remoteJid; 
 
-            // Console Log
             console.log(`📩 [${sender.split("@")[0]}] : ${text}`);
 
-            // EXECUTE PLUGINS
+            // 🔥 DELAY ANTI-SPAM GLOBAL (0.5 - 1.5 detik sebelum memproses)
+            // Biar tidak terlihat seperti mesin super cepat
+            await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
+
+            // Kirim status "Online" dulu (seperti orang buka WA)
+            await sock.sendPresenceUpdate('available', chatId);
+
             await Promise.all([
                 ping(sock, chatId, text, msg.key, msg),
                 menu(sock, chatId, text, msg.key, msg),
@@ -185,10 +172,9 @@ async function start() {
             ]);
 
         } catch (e) {
-            console.error("Error handling message:", e);
+            console.error("Error:", e);
         }
     });
 }
 
-// JALANKAN
 start();
