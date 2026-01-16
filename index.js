@@ -9,17 +9,15 @@ import fs from "fs";
 import pino from "pino";
 import path from "path";
 import { fileURLToPath } from "url";
-import readline from "readline"; // Import readline untuk input terminal
+import readline from "readline";
+import qrcode from "qrcode-terminal"; // Library untuk menampilkan QR
 
-// -- SETUP PATH & DATABASE --
+// -- SETUP PATH --
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Import Config & Plugins
-import { numberAllowed } from "./config.js";
-import { isOwner } from "./lib/utils.js";
-
-// Import Plugins
+// -- IMPORT PLUGINS --
+// Pastikan semua file ini ada di folder plugins/
 import ping from "./plugins/ping.js";
 import menu from "./plugins/menu.js";
 import admin from "./plugins/admin.js";
@@ -32,7 +30,7 @@ import autojpm from "./plugins/autojpm.js";
 import listgc from "./plugins/listgc.js";
 import tiktok from "./plugins/tiktok.js";
 import igdl from "./plugins/igdl.js";
-import owner from "./plugins/owner.js"; // Pastikan plugin owner sudah ada
+import owner from "./plugins/owner.js";
 import autoreply from "./plugins/autoreply.js";
 import jpmtag from "./plugins/jpmtag.js";
 
@@ -59,13 +57,13 @@ const question = (text) => {
     });
 };
 
-// -- FUNGSI UTAMA START --
+// -- FUNGSI UTAMA --
 async function start() {
     const { state, saveCreds } = await useMultiFileAuthState("sessions");
     const { version } = await fetchLatestBaileysVersion();
     const logger = pino({ level: "silent" });
 
-    // 1. TAMPILKAN MENU PILIHAN LOGIN
+    // -- MENU PILIHAN LOGIN --
     console.clear();
     console.log(`
 ╭────────────────────────────────╮
@@ -75,67 +73,73 @@ async function start() {
 2. 🔢 Login dengan Pairing Code
 ──────────────────────────────────`);
     
-    // Cek apakah sudah ada sesi login sebelumnya?
-    // Jika belum ada (state.creds.me kosong) dan tidak terdaftar, baru tanya user.
     let usePairingCode = false;
     let phoneNumber = "";
 
+    // Cek apakah belum login?
     if (!state.creds.me && !state.creds.registered) {
         const choice = await question("👉 Pilih Metode Login (1/2): ");
         if (choice.trim() === "2") {
             usePairingCode = true;
             phoneNumber = await question("📱 Masukkan Nomor Bot (628xx): ");
-            phoneNumber = phoneNumber.replace(/\D/g, ""); // Hapus karakter non-angka
+            phoneNumber = phoneNumber.replace(/\D/g, ""); // Bersihkan non-angka
         } else {
-            console.log("📷 Silakan scan QR Code yang muncul...");
+            console.log("📷 Menunggu QR Code...");
         }
     }
 
-    // 2. SETUP SOCKET
+    // -- CONFIG SOCKET --
     const sock = makeWASocket({
         version,
         logger,
-        printQRInTerminal: !usePairingCode, // QR muncul jika pairing code dimatikan
+        printQRInTerminal: false, // MATIKAN BAWAAN (Karena Error Deprecated)
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
-        browser: ["Ubuntu", "Chrome", "20.0.04"], // Browser stabil
+        // Browser Linux Standar (Lebih Stabil)
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
         generateHighQualityLinkPreview: true,
         connectTimeoutMs: 60000,
         keepAliveIntervalMs: 10000,
         markOnlineOnConnect: true,
     });
 
-    // 3. LOGIC PAIRING CODE (Jika dipilih)
+    // -- LOGIC PAIRING CODE --
     if (usePairingCode && !sock.authState.creds.registered) {
-        console.log(`⏳ Meminta Pairing Code untuk nomor: ${phoneNumber}...`);
+        console.log(`⏳ Meminta Pairing Code ke WhatsApp...`);
         setTimeout(async () => {
             try {
                 const code = await sock.requestPairingCode(phoneNumber);
                 console.log(`\n🔑 KODE PAIRING ANDA: \x1b[32m${code}\x1b[0m\n`);
             } catch (e) {
-                console.log("❌ Gagal meminta pairing code. Pastikan nomor benar.");
+                console.log("❌ Gagal meminta kode. Cek nomor HP atau IP kena limit.");
             }
         }, 3000);
     }
 
-    // -- EVENT LISTENERS --
+    // -- EVENT HANDLER --
 
     sock.ev.on("creds.update", saveCreds);
 
     sock.ev.on("connection.update", async (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
         
+        // MANAGE QR CODE MANUAL (Pengganti printQRInTerminal)
+        if (qr && !usePairingCode) {
+            console.log("Scan QR di bawah ini:");
+            qrcode.generate(qr, { small: true });
+        }
+
         if (connection === "close") {
             const reason = lastDisconnect?.error?.output?.statusCode;
             console.log("⚠️ Koneksi Terputus. Reason:", reason);
             
             if (reason === DisconnectReason.loggedOut) {
-                console.log("❌ Sesi dihapus/logout. Hapus folder sessions dan scan ulang.");
+                console.log("❌ Sesi Logout. Hapus folder sessions & login ulang.");
             } else {
                 console.log("🔄 Reconnecting...");
-                start(); // Auto reconnect
+                start(); // Auto Reconnect
             }
         } else if (connection === "open") {
             console.log("✅ BOT TERHUBUNG!");
@@ -156,13 +160,12 @@ async function start() {
             if (!text) return;
 
             const chatId = msg.key.remoteJid;
-            // Gunakan sender dari utils isOwner logic nanti
             const sender = msg.key.participant || msg.key.remoteJid; 
 
-            // Console Log Pesan Masuk
+            // Console Log
             console.log(`📩 [${sender.split("@")[0]}] : ${text}`);
 
-            // EKSEKUSI PLUGINS
+            // EXECUTE PLUGINS
             await Promise.all([
                 ping(sock, chatId, text, msg.key, msg),
                 menu(sock, chatId, text, msg.key, msg),
@@ -187,5 +190,5 @@ async function start() {
     });
 }
 
-// Jalankan Bot
+// JALANKAN
 start();
