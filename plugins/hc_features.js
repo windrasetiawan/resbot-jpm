@@ -41,7 +41,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
             const query = text.replace("#", "").trim();
             // Cari file di database/folder
             // Jika ketemu kirim
-            // await sock.sendMessage(chatId, { document: fs.readFileSync(path), fileName: query, mimetype: 'application/octet-stream' });
+            await sock.sendMessage(chatId, { document: fs.readFileSync(path), fileName: query, mimetype: 'application/octet-stream' });
              
             // Jika logic belum ada:
             console.log(`User mencari file: ${query}`);
