@@ -1,144 +1,196 @@
 import fs from "fs";
-import { downloadAndSaveMedia } from "../lib/utils.js";
+import path from "path";
+import AdmZip from "adm-zip";
+import { downloadAndSaveMedia, isOwner } from "../lib/utils.js";
 
 async function hcFeatures(sock, chatId, text, key, msg) {
     const cmd = text.split(" ")[0].toLowerCase();
-    // Cek command
-    const isHcCmd = [".addhc", ".listhc", ".delhc", "#delallhc", "#wintuneling"].includes(cmd) || text.startsWith("#");
+    const args = text.split(" ").slice(1).join(" ");
+    
+    // Pastikan folder database tersedia
+    const dbHC = "./DATABASE/HC";
+    if (!fs.existsSync(dbHC)) fs.mkdirSync(dbHC, { recursive: true });
+    
+    const isCreator = isOwner(msg.key.participant || msg.key.remoteJid);
 
-    if (!isHcCmd) return;
-
-    // --- HUMANIZED START ---
-    // Efek mengetik agar natural
-    await sock.sendPresenceUpdate('composing', chatId);
-    // Jeda acak (0.8 - 1.6 detik)
-    await new Promise(r => setTimeout(r, 800 + Math.random() * 800));
-
-    try {
-        const dbPath = "./DATABASE/data_grub.json"; 
+    // ==========================================
+    // 1. .addhc (Simpan Manual dari Reply)
+    // ==========================================
+    if (cmd === ".addhc" && isCreator) {
+        const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        if (!q?.documentMessage) return sock.sendMessage(chatId, { text: "❌ Reply file dokumen!" });
         
-        // Pastikan database ada
-        if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, "[]");
-        let data = JSON.parse(fs.readFileSync(dbPath));
+        const name = args || q.documentMessage.fileName;
+        const targetPath = path.join(dbHC, name);
 
-        // 1. ADD HC (Simpan File)
-        if (cmd === ".addhc") {
-            if (!msg.message.documentMessage) {
-                await sock.sendPresenceUpdate('paused', chatId);
-                return sock.sendMessage(chatId, { text: "⚠️ Reply file dokumen/script yang mau disimpan!" });
-            }
-            
-            const fileName = msg.message.documentMessage.fileName;
-
-            // Cek Duplikat
-            if (data.some(item => item.name === fileName)) {
-                await sock.sendPresenceUpdate('paused', chatId);
-                return sock.sendMessage(chatId, { text: "⚠️ File dengan nama tersebut sudah ada." });
-            }
-            
-            // Download File
-            const filePath = await downloadAndSaveMedia(sock, msg, fileName);
-            
-            // Simpan ke Database
-            data.push({ name: fileName, path: filePath });
-            fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
-
-            await sock.sendMessage(chatId, { text: `✅ File *${fileName}* berhasil ditambahkan ke database.` });
+        // Bersihkan file/folder lama jika ada
+        if (fs.existsSync(targetPath)) {
+            fs.rmSync(targetPath, { recursive: true, force: true });
         }
 
-        // 2. LIST HC (Lihat Daftar)
-        else if (cmd === ".listhc") {
-            if (data.length === 0) {
-                await sock.sendMessage(chatId, { text: "📂 Database kosong." });
-            } else {
-                let txt = "📂 *LIST FILE TERSIMPAN:*\n\n";
-                data.forEach((item, index) => {
-                    txt += `${index + 1}. ${item.name}\n`;
-                });
-                txt += "\nKetik *#namafile* untuk ambil satu.\nKetik *#wintuneling* untuk ambil SEMUA (Tanpa Caption).";
-                await sock.sendMessage(chatId, { text: txt });
-            }
-        }
+        const p = await downloadAndSaveMedia(sock, q, name);
+        fs.renameSync(p, targetPath);
+        return sock.sendMessage(chatId, { text: `✅ Saved: ${name}` });
+    }
 
-        // 3. DEL HC (Hapus Satu)
-        else if (cmd === ".delhc") {
-            const query = text.split(" ").slice(1).join(" ");
-            if (!query) return sock.sendMessage(chatId, { text: "⚠️ Masukkan nama file. Contoh: .delhc script.js" });
+    // ==========================================
+    // 2. #uploadhc (Upload ZIP -> Flatten & Replace)
+    // ==========================================
+    if (cmd === "#uploadhc" && isCreator) {
+        const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        const isZip = q?.documentMessage?.fileName.endsWith(".zip") || q?.documentMessage?.mimetype === "application/zip";
+        
+        if (!isZip) return sock.sendMessage(chatId, { text: "❌ Reply file ZIP!" });
 
-            const index = data.findIndex(item => item.name === query);
-            if (index !== -1) {
-                try { fs.unlinkSync(data[index].path); } catch (e) {}
-                data.splice(index, 1);
-                fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
-                await sock.sendMessage(chatId, { text: `✅ File *${query}* berhasil dihapus.` });
-            } else {
-                await sock.sendMessage(chatId, { text: "❌ File tidak ditemukan." });
-            }
-        }
+        try {
+            const p = await downloadAndSaveMedia(sock, q, "temp.zip");
+            const zip = new AdmZip(p);
+            const zipEntries = zip.getEntries();
 
-        // 4. DEL ALL (Hapus Semua)
-        else if (cmd === "#delallhc") {
-            if (data.length === 0) return sock.sendMessage(chatId, { text: "📂 Database sudah kosong." });
-
-            data.forEach(item => {
-                try { fs.unlinkSync(item.path); } catch (e) {}
+            let count = 0;
+            
+            zipEntries.forEach((entry) => {
+                // Pastikan bukan folder & bukan file sampah sistem
+                if (!entry.isDirectory) {
+                    const filename = entry.name; // Ambil nama file saja (flatten)
+                    
+                    if (filename && !filename.startsWith('.') && !filename.startsWith('__')) {
+                        const targetPath = path.join(dbHC, filename);
+                        
+                        // Hapus file/folder lama jika ada (agar tidak error EISDIR/EEXIST)
+                        if (fs.existsSync(targetPath)) {
+                            fs.rmSync(targetPath, { recursive: true, force: true });
+                        }
+                        
+                        // Simpan file baru
+                        fs.writeFileSync(targetPath, entry.getData());
+                        count++;
+                    }
+                }
             });
 
-            fs.writeFileSync(dbPath, "[]");
-            await sock.sendMessage(chatId, { text: "✅ Semua file database telah dihapus bersih." });
-        }
-
-        // 5. SEND ALL (#wintuneling) - NO CAPTION
-        else if (cmd === "#wintuneling") {
-            if (data.length === 0) {
-                return sock.sendMessage(chatId, { text: "📂 Database kosong." });
+            fs.unlinkSync(p); // Hapus temp zip
+            
+            if (count > 0) {
+                return sock.sendMessage(chatId, { text: `✅ Sukses!\n📂 ${count} file diekstrak & disimpan.\n(Folder lama dibersihkan)` });
+            } else {
+                return sock.sendMessage(chatId, { text: "⚠️ File ZIP kosong atau tidak valid." });
             }
 
-            await sock.sendMessage(chatId, { text: `🚀 Mengirim ${data.length} file (Tanpa Caption)...` });
-
-            // Loop semua file
-            for (let item of data) {
-                if (fs.existsSync(item.path)) {
-                    // Kirim File POLOSAN (Tanpa Caption sama sekali)
-                    await sock.sendMessage(chatId, { 
-                        document: fs.readFileSync(item.path), 
-                        fileName: item.name, 
-                        mimetype: 'application/octet-stream'
-                        // caption: "" <--- Dihapus total agar aman
-                    });
-                    
-                    // Jeda Aman (Delay) per file (2-4 detik)
-                    await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
-                }
-            }
-            await sock.sendMessage(chatId, { text: "✅ Selesai." });
+        } catch (e) {
+            console.error(e);
+            return sock.sendMessage(chatId, { text: `❌ Error: ${e.message}` });
         }
+    }
+
+    // ==========================================
+    // 3. #wintuneling (Kirim Semua Config)
+    // ==========================================
+    if (cmd === "#wintuneling") {
+        const files = fs.readdirSync(dbHC);
+        // Filter hanya file
+        const validFiles = files.filter(f => fs.statSync(path.join(dbHC, f)).isFile());
+
+        if (validFiles.length === 0) return sock.sendMessage(chatId, { text: "📂 Database Kosong." });
         
-        // 6. GET ONE (#namafile) - NO CAPTION
-        else if (text.startsWith("#")) {
-            const query = text.replace("#", "").trim();
-            const fileData = data.find(item => item.name === query);
+        // [MODIFIKASI] Pesan "Mengirim..." DIHAPUS
 
-            if (fileData) {
-                if (fs.existsSync(fileData.path)) {
-                    await sock.sendMessage(chatId, { 
-                        document: fs.readFileSync(fileData.path), 
-                        fileName: fileData.name, 
-                        mimetype: 'application/octet-stream'
-                        // Caption dihapus juga disini
-                    }, { quoted: msg });
-                } else {
-                    await sock.sendMessage(chatId, { text: "❌ File fisik hilang." });
-                }
-            } 
+        for (const f of validFiles) {
+            try {
+                await sock.sendMessage(chatId, { 
+                    document: fs.readFileSync(path.join(dbHC, f)), 
+                    fileName: f, 
+                    mimetype: 'application/octet-stream',
+                    caption: "" 
+                });
+                await new Promise(r => setTimeout(r, 2000)); // Delay tetap ada agar tidak spam flood
+            } catch {}
         }
+        // [MODIFIKASI] Pesan "Selesai" DIHAPUS
+        return;
+    }
+    // ==========================================
+    // 4. .listhc (Cek Daftar File)
+    // ==========================================
+    if (cmd === ".listhc") {
+        const files = fs.readdirSync(dbHC);
+        const validFiles = files.filter(f => fs.statSync(path.join(dbHC, f)).isFile());
+        
+        if (validFiles.length === 0) return sock.sendMessage(chatId, { text: "📂 Database Kosong." });
+        
+        let t = `📂 *DATABASE CONFIG (${validFiles.length})*\n\n` + validFiles.map((f, i) => `${i+1}. #${f}`).join("\n");
+        return sock.sendMessage(chatId, { text: t });
+    }
 
-    } catch (e) {
-        console.error("HC Error:", e);
-        sock.sendMessage(chatId, { text: "❌ Terjadi kesalahan sistem database." });
-    } finally {
-        // Stop status mengetik
-        await sock.sendPresenceUpdate('paused', chatId);
+    // ==========================================
+    // 5. #namafile (Pencarian Parsial)
+    // ==========================================
+    if (text.startsWith("#") && cmd !== "#uploadhc" && cmd !== "#wintuneling") {
+        const query = text.slice(1).trim().toLowerCase();
+        if (!query) return;
+
+        const files = fs.readdirSync(dbHC);
+        // Filter hanya file
+        const validFiles = files.filter(f => fs.statSync(path.join(dbHC, f)).isFile());
+        
+        // Cari yang mengandung kata kunci
+        const matched = validFiles.filter(f => f.toLowerCase().includes(query));
+
+        if (matched.length === 0) {
+            return sock.sendMessage(chatId, { text: `❌ File "${query}" tidak ditemukan.` });
+        } else if (matched.length === 1) {
+            const f = matched[0];
+            return sock.sendMessage(chatId, { 
+                document: fs.readFileSync(path.join(dbHC, f)), 
+                fileName: f, 
+                mimetype: 'application/octet-stream',
+                caption: "" 
+            });
+        } else {
+            let list = `🔍 *Ditemukan ${matched.length} file mirip:*\n\n`;
+            list += matched.map((f, i) => `${i+1}. #${f}`).join("\n");
+            list += `\n⚠️ Ketik nama lebih spesifik.`;
+            return sock.sendMessage(chatId, { text: list });
+        }
+    }
+
+    // ==========================================
+    // 6. .delhc (Hapus Satu File)
+    // ==========================================
+    if (cmd === ".delhc" && isCreator) {
+        const fileName = args;
+        const p = path.join(dbHC, fileName);
+        
+        if (fs.existsSync(p)) { 
+            fs.rmSync(p, { recursive: true, force: true }); // Aman untuk file & folder
+            return sock.sendMessage(chatId, { text: `✅ Berhasil menghapus ${fileName}` }); 
+        } else { 
+            return sock.sendMessage(chatId, { text: "❌ File tidak ditemukan." }); 
+        }
+    }
+
+    // ==========================================
+    // 7. .delallhc (Hapus SEMUA File Database) - BARU
+    // ==========================================
+    if (cmd === ".delallhc" && isCreator) {
+        try {
+            const files = fs.readdirSync(dbHC);
+            if (files.length === 0) return sock.sendMessage(chatId, { text: "⚠️ Database HC sudah kosong." });
+
+            let count = 0;
+            // Loop semua file dan hapus satu per satu
+            files.forEach(file => {
+                const filePath = path.join(dbHC, file);
+                // rmSync dengan recursive:true menghapus file maupun folder dengan aman
+                fs.rmSync(filePath, { recursive: true, force: true });
+                count++;
+            });
+
+            return sock.sendMessage(chatId, { text: `✅ *SUKSES MENGHAPUS DATABASE*\n\n🗑️ Total: ${count} item dihapus bersih.` });
+        } catch (e) {
+            console.error(e);
+            return sock.sendMessage(chatId, { text: `❌ Gagal menghapus: ${e.message}` });
+        }
     }
 }
 
