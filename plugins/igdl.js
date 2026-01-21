@@ -1,19 +1,31 @@
 import fetch from "node-fetch";
 
-// Fungsi Download Anti-Error 403 (Wajib)
+// --- FUNGSI DOWNLOAD PINTAR (ANTI 403) ---
 const getBuffer = async (url) => {
     try {
-        const res = await fetch(url, {
+        // PERCOBAAN 1: Pakai Headers (Menyamar jadi Chrome)
+        const res1 = await fetch(url, {
             headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+                "Referer": "https://www.instagram.com/"
             }
         });
-        if (res.ok) return Buffer.from(await res.arrayBuffer());
         
-        const res2 = await fetch(url);
-        if (res2.ok) return Buffer.from(await res2.arrayBuffer());
-        
-        throw new Error("Gagal mengambil media.");
+        if (res1.ok) {
+            const ab1 = await res1.arrayBuffer();
+            return Buffer.from(ab1);
+        }
+
+        // PERCOBAAN 2: Jika Gagal (403), coba Polosan (Tanpa Header)
+        // Kadang CDN Instagram justru menolak kalau ada header aneh-aneh
+        const res2 = await fetch(url); 
+        if (res2.ok) {
+            const ab2 = await res2.arrayBuffer();
+            return Buffer.from(ab2);
+        }
+
+        throw new Error(`Gagal download (Status: ${res1.status} / ${res2.status})`);
+
     } catch (e) {
         throw e;
     }
@@ -26,62 +38,64 @@ async function igdl(sock, chatId, text, key, msg) {
     let url = text.split(" ")[1];
     if (!url) return sock.sendMessage(chatId, { text: "⚠️ Masukkan link Instagram!" });
 
-    // --- STYLE ORIGINAL (Pesan Proses) ---
-    // Tidak pakai typing, tapi kirim pesan "Sedang memproses..."
-    await sock.sendMessage(chatId, { text: "⏳ Sedang memproses..." }, { quoted: msg });
+    url = url.split("?")[0];
+
+    await sock.sendMessage(chatId, { text: "⏳ Sedang Memproses IG..." }, { quoted: msg });
 
     try {
         const response = await fetch(`https://api-faa.my.id/faa/igdl?url=${url}`);
         const json = await response.json();
 
-        // Validasi
-        if (!json.result) {
-            return sock.sendMessage(chatId, { text: "❌ Media tidak ditemukan atau akun Private." });
+        // Debugging Log
+        console.log("RESPON IG:", JSON.stringify(json, null, 2));
+
+        if (!json.status || !json.result) {
+            return sock.sendMessage(chatId, { text: "❌ Gagal mengambil data." });
         }
 
-        let data = json.result;
+        const result = json.result;
         
-        // --- AMBIL CAPTION & USERNAME ---
-        // Handle jika data berupa Array (slide) atau Object
-        const info = Array.isArray(data) ? data[0] : data;
-        
-        const username = info.username || info.owner || data.username || "Instagram User";
-        const captionRaw = info.caption || info.title || data.caption || "";
-        
-        const finalCaption = `✅ *IG Downloader*\n\n👤 *User:* ${username}\n📝 *Caption:*\n${captionRaw}`;
+        // 1. Ambil List URL
+        let mediaUrls = result.url;
+        if (!Array.isArray(mediaUrls)) mediaUrls = [mediaUrls];
 
-        // Normalisasi List Media
-        let mediaList = data.url || data; 
-        if (!Array.isArray(mediaList)) mediaList = [mediaList];
+        // 2. Ambil Metadata
+        const meta = result.metadata || {};
+        const username = meta.username || "-";
+        const captionText = meta.caption || "-";
+        
+        const finalCaption = `✅ *Berhasil Didownload*\nUsername : ${username}\nCaption : ${captionText}`;
 
+        // 3. Loop Download & Kirim
         let successCount = 0;
 
-        for (let item of mediaList) {
-            // Ambil URL-nya saja
-            let mediaUrl = (typeof item === 'string') ? item : (item.url || item.download_url);
+        for (let i = 0; i < mediaUrls.length; i++) {
+            let link = mediaUrls[i];
+            if (!link) continue;
 
-            if (mediaUrl) {
-                try {
-                    // Download Buffer (Anti 403)
-                    const buffer = await getBuffer(mediaUrl);
+            try {
+                // Download Buffer (Akan otomatis coba 2 metode)
+                const buffer = await getBuffer(link);
+                const cap = (i === 0) ? finalCaption : "";
 
-                    if (mediaUrl.includes(".mp4")) {
-                        await sock.sendMessage(chatId, { 
-                            video: buffer, 
-                            caption: finalCaption, // Pakai Caption Lengkap
-                            mimetype: 'video/mp4' 
-                        }, { quoted: msg });
-                    } else {
-                        await sock.sendMessage(chatId, { 
-                            image: buffer, 
-                            caption: finalCaption, // Pakai Caption Lengkap
-                            mimetype: 'image/jpeg' 
-                        }, { quoted: msg });
-                    }
-                    successCount++;
-                } catch (err) {
-                    console.log(`Gagal download slide: ${err.message}`);
+                // Cek Tipe File
+                if (link.includes(".mp4") || meta.isVideo) {
+                    await sock.sendMessage(chatId, { 
+                        video: buffer, 
+                        caption: cap,
+                        mimetype: 'video/mp4' // ✅ WAJIB: Biar video bisa diputar
+                    }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(chatId, { 
+                        image: buffer, 
+                        caption: cap,
+                        mimetype: 'image/jpeg' // ✅ WAJIB: Biar gambar normal
+                    }, { quoted: msg });
                 }
+                successCount++;
+
+            } catch (err) {
+                console.log(`Gagal download slide ke-${i}: ${err.message}`);
             }
         }
 
@@ -96,3 +110,4 @@ async function igdl(sock, chatId, text, key, msg) {
 }
 
 export default igdl;
+        
