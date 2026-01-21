@@ -4,74 +4,60 @@ async function tiktok(sock, chatId, text, key, msg) {
     const cmd = text.split(" ")[0].toLowerCase();
     if (cmd !== ".tt" && cmd !== ".tiktok") return;
 
-    let url = text.split(" ")[1];
+    const url = text.split(" ")[1];
     if (!url) return sock.sendMessage(chatId, { text: "⚠️ Masukkan link TikTok!" });
 
-    // --- HUMANIZED (HANYA MENGETIK) ---
-    // Bagian react emoji dihapus sesuai request
-    await sock.sendPresenceUpdate('composing', chatId);
-    
-    // LIST API (Multi-Server)
-    const apis = [
-        { url: `https://api.tiklydown.eu.org/api/download?url=${url}`, type: "tiklydown" },
-        { url: `https://api.agatz.xyz/api/tiktok?url=${url}`, type: "agatz" },
-        { url: `https://api-faa.my.id/faa/tiktok?url=${url}`, type: "faa" }
-    ];
+    await sock.sendMessage(chatId, { text: "⏳ Sedang memproses..." }, { quoted: msg });
 
-    let success = false;
+    try {
+        const response = await fetch(`https://zelapioffciall.koyeb.app/download/tiktok?url=${url}`);
+        const json = await response.json();
 
-    for (let api of apis) {
-        if (success) break;
-        
-        try {
-            const res = await fetch(api.url);
-            const json = await res.json();
-            
-            let videoUrl = null;
-            let images = [];
-            let caption = "";
-
-            if (api.type === "tiklydown" && json.video) {
-                videoUrl = json.video.noWatermark || json.video.watermark;
-                images = json.images || [];
-                caption = json.title || "TikTok Video";
-            }
-            else if (api.type === "agatz" && json.status === 200) {
-                videoUrl = json.data.data.find(v => v.type === "nowatermark")?.url || json.data.data[0]?.url;
-                caption = json.data.title || "TikTok Video";
-            }
-            else if (api.type === "faa" && json.result) {
-                videoUrl = json.result.video;
-                images = json.result.images || [];
-                caption = json.result.title || "TikTok Video";
-            }
-
-            if (videoUrl) {
-                await sock.sendMessage(chatId, { 
-                    video: { url: videoUrl }, 
-                    caption: `✅ *TikTok Downloaded*\n📝 ${caption}`,
-                    mimetype: 'video/mp4'
-                }, { quoted: msg });
-                success = true;
-            }
-            else if (images.length > 0) {
-                await sock.sendMessage(chatId, { text: `📸 Mengirim ${images.length} gambar...` }, { quoted: msg });
-                for (let img of images) {
-                    await sock.sendMessage(chatId, { image: { url: img.url || img } });
-                }
-                success = true;
-            }
-
-        } catch (e) {
-            console.log(`API ${api.type} Gagal.`);
+        // Cek Status
+        if (!json.status || !json.result) {
+            return sock.sendMessage(chatId, { text: "❌ Gagal: Respon API kosong atau error." });
         }
-    }
 
-    if (!success) {
-        await sock.sendMessage(chatId, { text: "❌ Gagal mendownload video." });
-    }
+        const data = json.result;
+        
+        // Ambil Metadata (Info Video) sesuai struktur JSON terbaru
+        const author = data.metadata?.creator || data.creator || "-";
+        const title = data.metadata?.title || data.metadata?.description || "-";
+        const caption = `✅ *Berhasil Didownload*\nUsername : ${author}\nCaption : ${title}`;
 
-    await sock.sendPresenceUpdate('paused', chatId);
+        // 1. Cek Slide Foto (Images)
+        if (data.images && data.images.length > 0) {
+            for (let img of data.images) {
+                await sock.sendMessage(chatId, { image: { url: img } });
+            }
+            return sock.sendMessage(chatId, { text: "✅ Selesai mengirim slide." });
+        }
+
+        // 2. Cek Video (FIX: Ambil dari array 'urls')
+        let videoUrl = null;
+
+        // Coba ambil dari 'urls' urutan pertama (paling umum di API ini)
+        if (data.urls && Array.isArray(data.urls) && data.urls.length > 0) {
+            videoUrl = data.urls[0];
+        } 
+        // Backup: Coba cari key lain siapa tau format berubah lagi
+        else {
+            videoUrl = data.video || data.play || data.hdplay; 
+        }
+
+        if (videoUrl) {
+            await sock.sendMessage(chatId, { 
+                video: { url: videoUrl }, 
+                caption: caption 
+            }, { quoted: msg });
+        } else {
+            sock.sendMessage(chatId, { text: "❌ Link video tidak ditemukan dalam respon API." });
+        }
+
+    } catch (e) {
+        console.error("TikTok Error:", e);
+        sock.sendMessage(chatId, { text: "❌ Terjadi kesalahan sistem." });
+    }
 }
 
 export default tiktok;
