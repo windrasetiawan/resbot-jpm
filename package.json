@@ -1,11 +1,14 @@
 {
   "name": "resbot-jpm-v4",
   "version": "4.5.0",
-  "type": "module",
+  "description": "WhatsApp Bot JPM V4",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
+  "author": "Resbot",
+  "license": "ISC",
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.9",
     "@hapi/boom": "^10.0.1",
@@ -13,6 +16,8 @@
     "cli-color": "^2.0.3",
     "axios": "^1.6.0",
     "adm-zip": "^0.5.10",
-    "archiver": "^6.0.1"
+    "archiver": "^6.0.1",
+    "node-fetch": "^3.3.2",
+    "qrcode-terminal": "^0.12.0"
   }
 }
