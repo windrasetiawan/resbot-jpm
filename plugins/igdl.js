@@ -1,6 +1,6 @@
 import fetch from "node-fetch";
 
-// Fungsi Download Anti-Error 403
+// Fungsi Download Anti-Error 403 (Wajib)
 const getBuffer = async (url) => {
     try {
         const res = await fetch(url, {
@@ -26,48 +26,55 @@ async function igdl(sock, chatId, text, key, msg) {
     let url = text.split(" ")[1];
     if (!url) return sock.sendMessage(chatId, { text: "⚠️ Masukkan link Instagram!" });
 
-    // --- HUMANIZED (HANYA MENGETIK) ---
-    // Bagian react emoji dihapus sesuai request
-    await sock.sendPresenceUpdate('composing', chatId);
-    await new Promise(r => setTimeout(r, 1000)); // Delay 1 detik
+    // --- STYLE ORIGINAL (Pesan Proses) ---
+    // Tidak pakai typing, tapi kirim pesan "Sedang memproses..."
+    await sock.sendMessage(chatId, { text: "⏳ Sedang memproses..." }, { quoted: msg });
 
     try {
         const response = await fetch(`https://api-faa.my.id/faa/igdl?url=${url}`);
         const json = await response.json();
 
+        // Validasi
         if (!json.result) {
-            await sock.sendPresenceUpdate('paused', chatId);
             return sock.sendMessage(chatId, { text: "❌ Media tidak ditemukan atau akun Private." });
         }
 
-        const data = json.result;
-        const username = data.username || data.owner || "Instagram User";
-        const captionRaw = data.caption || data.title || "";
+        let data = json.result;
+        
+        // --- AMBIL CAPTION & USERNAME ---
+        // Handle jika data berupa Array (slide) atau Object
+        const info = Array.isArray(data) ? data[0] : data;
+        
+        const username = info.username || info.owner || data.username || "Instagram User";
+        const captionRaw = info.caption || info.title || data.caption || "";
         
         const finalCaption = `✅ *IG Downloader*\n\n👤 *User:* ${username}\n📝 *Caption:*\n${captionRaw}`;
 
+        // Normalisasi List Media
         let mediaList = data.url || data; 
         if (!Array.isArray(mediaList)) mediaList = [mediaList];
 
         let successCount = 0;
 
         for (let item of mediaList) {
+            // Ambil URL-nya saja
             let mediaUrl = (typeof item === 'string') ? item : (item.url || item.download_url);
 
             if (mediaUrl) {
                 try {
+                    // Download Buffer (Anti 403)
                     const buffer = await getBuffer(mediaUrl);
 
                     if (mediaUrl.includes(".mp4")) {
                         await sock.sendMessage(chatId, { 
                             video: buffer, 
-                            caption: finalCaption, 
+                            caption: finalCaption, // Pakai Caption Lengkap
                             mimetype: 'video/mp4' 
                         }, { quoted: msg });
                     } else {
                         await sock.sendMessage(chatId, { 
                             image: buffer, 
-                            caption: finalCaption, 
+                            caption: finalCaption, // Pakai Caption Lengkap
                             mimetype: 'image/jpeg' 
                         }, { quoted: msg });
                     }
@@ -79,14 +86,12 @@ async function igdl(sock, chatId, text, key, msg) {
         }
 
         if (successCount === 0) {
-            sock.sendMessage(chatId, { text: "❌ Gagal mendownload media." });
+            sock.sendMessage(chatId, { text: "❌ Gagal mendownload media (Link Expired/Error 403)." });
         }
 
     } catch (e) {
         console.error("IGDL Error:", e);
         sock.sendMessage(chatId, { text: "❌ Terjadi kesalahan sistem." });
-    } finally {
-        await sock.sendPresenceUpdate('paused', chatId);
     }
 }
 
