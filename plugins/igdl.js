@@ -64,7 +64,7 @@ async function igdl(sock, chatId, text, key, msg) {
         const username = meta.username || "-";
         const captionText = meta.caption || "-";
         
-        const finalCaption = `✅ *Berhasil Didownload*\nUsername : ${username}\nCaption : ${captionText}`;
+        const finalCaption = `✅ *Berhasil Didownload*\n📸 Username : ${username}\n📃 Caption : ${captionText}`;
 
         // 3. Loop Download & Kirim
         let successCount = 0;
