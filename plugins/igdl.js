@@ -1,23 +1,19 @@
 import fetch from "node-fetch";
 
-// --- FUNGSI DOWNLOADER ANTI 403 ---
+// Fungsi Download Anti-Error 403
 const getBuffer = async (url) => {
     try {
-        // Opsi 1: Menyamar sebagai Browser (Chrome Windows)
         const res = await fetch(url, {
             headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-                "Referer": "https://www.instagram.com/"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
             }
         });
         if (res.ok) return Buffer.from(await res.arrayBuffer());
-
-        // Opsi 2: Jika Opsi 1 gagal (403), coba Polosan (Tanpa Header)
-        // Kadang CDN Instagram justru menolak header tertentu
+        
         const res2 = await fetch(url);
         if (res2.ok) return Buffer.from(await res2.arrayBuffer());
-
-        throw new Error("Gagal mengambil buffer media.");
+        
+        throw new Error("Gagal mengambil media.");
     } catch (e) {
         throw e;
     }
@@ -30,13 +26,12 @@ async function igdl(sock, chatId, text, key, msg) {
     let url = text.split(" ")[1];
     if (!url) return sock.sendMessage(chatId, { text: "⚠️ Masukkan link Instagram!" });
 
-    // --- HUMANIZED (Anti-Ban) ---
-    await sock.sendMessage(chatId, { react: { text: "📸", key: msg.key } });
+    // --- HUMANIZED (HANYA MENGETIK) ---
+    // Bagian react emoji dihapus sesuai request
     await sock.sendPresenceUpdate('composing', chatId);
-    await new Promise(r => setTimeout(r, 1000)); 
+    await new Promise(r => setTimeout(r, 1000)); // Delay 1 detik
 
     try {
-        // Menggunakan API Alternative yang stabil
         const response = await fetch(`https://api-faa.my.id/faa/igdl?url=${url}`);
         const json = await response.json();
 
@@ -45,33 +40,46 @@ async function igdl(sock, chatId, text, key, msg) {
             return sock.sendMessage(chatId, { text: "❌ Media tidak ditemukan atau akun Private." });
         }
 
-        // Normalisasi Data (Bisa berupa Array atau Object)
-        let mediaData = json.result.url || json.result;
-        if (!Array.isArray(mediaData)) mediaData = [mediaData];
+        const data = json.result;
+        const username = data.username || data.owner || "Instagram User";
+        const captionRaw = data.caption || data.title || "";
+        
+        const finalCaption = `✅ *IG Downloader*\n\n👤 *User:* ${username}\n📝 *Caption:*\n${captionRaw}`;
 
-        let success = 0;
-        for (let item of mediaData) {
-            // Ambil URL (support berbagai format output API)
+        let mediaList = data.url || data; 
+        if (!Array.isArray(mediaList)) mediaList = [mediaList];
+
+        let successCount = 0;
+
+        for (let item of mediaList) {
             let mediaUrl = (typeof item === 'string') ? item : (item.url || item.download_url);
-            
+
             if (mediaUrl) {
                 try {
                     const buffer = await getBuffer(mediaUrl);
-                    
+
                     if (mediaUrl.includes(".mp4")) {
-                        await sock.sendMessage(chatId, { video: buffer, caption: "✅ Instagram Video", mimetype: 'video/mp4' }, { quoted: msg });
+                        await sock.sendMessage(chatId, { 
+                            video: buffer, 
+                            caption: finalCaption, 
+                            mimetype: 'video/mp4' 
+                        }, { quoted: msg });
                     } else {
-                        await sock.sendMessage(chatId, { image: buffer, caption: "✅ Instagram Image", mimetype: 'image/jpeg' }, { quoted: msg });
+                        await sock.sendMessage(chatId, { 
+                            image: buffer, 
+                            caption: finalCaption, 
+                            mimetype: 'image/jpeg' 
+                        }, { quoted: msg });
                     }
-                    success++;
+                    successCount++;
                 } catch (err) {
-                    console.log("Gagal download slide:", err);
+                    console.log(`Gagal download slide: ${err.message}`);
                 }
             }
         }
 
-        if (success === 0) {
-            sock.sendMessage(chatId, { text: "❌ Gagal mendownload media (Error 403/Link Expired)." });
+        if (successCount === 0) {
+            sock.sendMessage(chatId, { text: "❌ Gagal mendownload media." });
         }
 
     } catch (e) {
