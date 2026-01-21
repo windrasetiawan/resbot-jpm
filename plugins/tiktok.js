@@ -23,12 +23,15 @@ async function tiktok(sock, chatId, text, key, msg) {
         const data = json.result;
         
         // Ambil Info Username & Judul
-        // API biasanya mengembalikan author/nickname/username
         const username = data.author || data.nickname || data.username || "TikTok User";
-        const desc = data.title || "No Caption";
+        const desc = data.title || data.caption || "No Caption";
 
         // Format Caption dengan Username
-        const finalCaption = `✅ *TikTok Downloader*\n\n👤 *Username:* ${username}\n📝 *Caption:* ${desc}`;
+        const finalCaption = `✅ *Berhasil didownload*\n\n👤 *Username:* ${username}\n📝 *Caption:* ${desc}`;
+
+        // --- PERBAIKAN DI SINI ---
+        // Kita cek semua kemungkinan nama agar tidak error "Media tidak valid"
+        const videoUrl = data.video || data.play || data.nowatermark || data.watermark || (data.url ? data.url[0] : null);
 
         // LOGIC: Cek Slide Gambar DULUAN (Prioritas)
         if (data.images && data.images.length > 0) {
@@ -39,16 +42,18 @@ async function tiktok(sock, chatId, text, key, msg) {
                 await sock.sendMessage(chatId, { image: { url: img } });
             }
         } 
-        // Jika tidak ada gambar, baru kirim Video
-        else if (data.video) {
+        // Jika tidak ada gambar, baru kirim Video (Gunakan variabel videoUrl yang sudah dicek di atas)
+        else if (videoUrl) {
             await sock.sendMessage(chatId, { 
-                video: { url: data.video }, 
+                video: { url: videoUrl }, 
                 caption: finalCaption,
                 mimetype: 'video/mp4'
             }, { quoted: msg });
         } 
         else {
-            sock.sendMessage(chatId, { text: "❌ Media tidak valid." });
+            // Jika benar-benar kosong
+            console.log("JSON RESULT:", data); // Cek log jika masih error
+            sock.sendMessage(chatId, { text: "❌ Media tidak valid (Link video tidak ditemukan)." });
         }
 
     } catch (e) {
