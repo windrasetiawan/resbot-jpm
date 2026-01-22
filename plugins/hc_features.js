@@ -9,7 +9,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
     const cmd = rawArgs[0].toLowerCase();
     const args = textTrimmed.split(" ").slice(1).join(" "); 
     
-    // Setup Database Folder
+    // Setup Database Folder (Tetap ada untuk fitur manajemen file lainnya)
     const dbHC = "./DATABASE/HC";
     const tmpDir = "./tmp";
     if (!fs.existsSync(dbHC)) fs.mkdirSync(dbHC, { recursive: true });
@@ -17,17 +17,13 @@ async function hcFeatures(sock, chatId, text, key, msg) {
     
     const isCreator = isOwner ? isOwner(msg.key.participant || msg.key.remoteJid) : true;
 
-    // ==========================================
-    // 1. MANAJEMEN FILE (.addhc, #uploadhc, dll)
-    // ==========================================
-    
     // .addhc (Simpan Manual)
     if (cmd === ".addhc" && isCreator) {
         const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         if (!q?.documentMessage) return sock.sendMessage(chatId, { text: "❌ Reply file dokumen!" });
         
         let name = args || q.documentMessage.fileName;
-        if (!name.endsWith(".hc") && !name.endsWith(".txt")) name += ".hc";
+        if (!name.includes(".")) name += ".txt";
 
         const targetPath = path.join(dbHC, name);
         if (fs.existsSync(targetPath)) fs.rmSync(targetPath, { recursive: true, force: true });
@@ -81,7 +77,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: "❌ File tidak ditemukan." });
     }
 
-    // #wintuneling (Send All Silent)
+    // #wintuneling (Send All)
     if (cmd === "#wintuneling") {
         const files = fs.readdirSync(dbHC).filter(f => fs.statSync(path.join(dbHC, f)).isFile());
         if (files.length === 0) return sock.sendMessage(chatId, { text: "📂 Database Kosong." });
@@ -92,14 +88,10 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return;
     }
 
-    // ==========================================
-    // 2. CREATE CONFIG (SUPPORT VMESS, VLESS, TROJAN)
-    // ==========================================
+    // 2. CREATE CONFIG (DIRECT LINK RESPONSE)
     if (cmd.startsWith(".createhc") || cmd.startsWith(".buathc")) {
         const inputs = textTrimmed.split(/\s+/);
         
-        // Format (Sama untuk semua mode):
-        // .cmd <bug> <link> <nama>
         const inputBug = inputs[1];
         const link = inputs[2];
         const customName = inputs.slice(3).join(" ");
@@ -107,15 +99,13 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         if (!inputBug || !link || !customName) {
             return sock.sendMessage(chatId, { 
                 text: `⚠️ *Format Salah!*\n\n` +
-                      `🅰️ *Standard:* .createhc <bug> <link> <nama>\n` +
-                      `🅱️ *Wildcard:* .createhcwild <bug> <link> <nama>\n` +
-                      `_(Support: Vmess, Vless, Trojan)_`
+                      `🅰️ *Websocket:* .createhc <bug> <link> <nama>\n` +
+                      `🅱️ *Wildcard:* .createhcwild <bug> <link> <nama>`
             });
         }
 
         const isWildcardMode = cmd.includes("wild");
 
-        // Cek Protokol
         if (!link.match(/^(vmess|vless|trojan):\/\//)) {
             return sock.sendMessage(chatId, { text: "❌ Hanya support Vmess, Vless, dan Trojan." });
         }
@@ -124,90 +114,54 @@ async function hcFeatures(sock, chatId, text, key, msg) {
             let finalLink = "";
             let originalServer = "";
             let generatedSNI = "";
-            let port = "80";
-            let typeInfo = "🔓 Non-TLS";
             let protocol = link.split("://")[0];
 
-            // --- A. LOGIC VMESS (JSON Base64) ---
+            // --- A. LOGIC VMESS ---
             if (protocol === "vmess") {
                 const b64 = link.replace("vmess://", "");
                 let vmessObj = JSON.parse(Buffer.from(b64, 'base64').toString('utf-8'));
                 
                 originalServer = vmessObj.add;
-                port = vmessObj.port || "80";
-                if (vmessObj.tls === "tls" || port === "443") typeInfo = "🔒 TLS";
 
-                // Tentukan SNI
                 if (isWildcardMode) {
-                    generatedSNI = `${inputBug}.${originalServer}`; // Auto Subdomain
+                    generatedSNI = `${inputBug}.${originalServer}`; 
                 } else {
-                    generatedSNI = originalServer; // Original
+                    generatedSNI = originalServer; 
                 }
                 
-                // Apply Config
-                vmessObj.add = inputBug;       // Address = Bug
-                vmessObj.host = generatedSNI;  // Host
-                vmessObj.sni = generatedSNI;   // SNI
-                
+                vmessObj.add = inputBug;       
+                vmessObj.host = generatedSNI;  
+                vmessObj.sni = generatedSNI;   
                 vmessObj.ps = customName;
+                
                 finalLink = "vmess://" + Buffer.from(JSON.stringify(vmessObj)).toString('base64');
             } 
             
-            // --- B. LOGIC VLESS & TROJAN (URL Format) ---
             else {
-                // Hack: Ubah ke http agar bisa diparsing URL object
                 const tempLink = link.replace(`${protocol}://`, "http://");
                 const url = new URL(tempLink);
-
                 originalServer = url.hostname;
-                port = url.port || (protocol === "trojan" ? "443" : "80");
-                if (port === "443" || url.searchParams.get("security") === "tls") typeInfo = "🔒 TLS";
 
-                // Tentukan SNI
                 if (isWildcardMode) {
-                    generatedSNI = `${inputBug}.${originalServer}`; // Auto Subdomain
+                    generatedSNI = `${inputBug}.${originalServer}`; 
                 } else {
-                    generatedSNI = originalServer; // Original
+                    generatedSNI = originalServer; 
                 }
 
-                // Apply Config
-                url.hostname = inputBug; // Address = Bug
+                url.hostname = inputBug; 
                 url.searchParams.set("host", generatedSNI);
                 url.searchParams.set("sni", generatedSNI);
-                
-                // Hapus Encryption None jika ada (opsional, biar bersih)
                 if(url.searchParams.get("encryption") === "none") url.searchParams.delete("encryption");
-
                 url.hash = "#" + encodeURIComponent(customName);
                 
-                // Kembalikan Protokol
                 finalLink = url.toString().replace("http://", `${protocol}://`);
-                // Hapus trailing slash
                 if (finalLink.endsWith("/") && !link.endsWith("/")) finalLink = finalLink.slice(0, -1);
             }
 
-            // SIMPAN & KIRIM
-            let finalFileName = customName.endsWith(".hc") ? customName : customName + ".hc";
-            const filePath = path.join(tmpDir, finalFileName);
-            fs.writeFileSync(filePath, finalLink);
+            // KIRIM LINK LANGSUNG (SIMPLE CAPTION) 
+            const simpleCaption = `✅ *${customName}*\n\n\`\`\`${finalLink}\`\`\``;
 
-            let caption = `✅ *Config ${protocol.toUpperCase()} Created*\n\n`;
-            caption += `⚙️ *Mode:* ${isWildcardMode ? "Wildcard" : "Bug WS"}\n`;
-            caption += `🛡️ *Type:* ${typeInfo}\n`;
-            caption += `🔌 *Port:* ${port}\n\n`;
-            
-            caption += `🐞 *Bug/Addr:* ${inputBug}\n`;
-            caption += `🌐 *SNI/Host:* ${generatedSNI}\n`;
-            caption += `\n📝 *File:* ${finalFileName}`;
-
-            await sock.sendMessage(chatId, { 
-                document: fs.readFileSync(filePath), 
-                fileName: finalFileName, 
-                mimetype: 'application/octet-stream',
-                caption: caption
-            }, { quoted: msg });
-
-            setTimeout(() => { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); }, 5000);
+            await sock.sendMessage(chatId, { text: simpleCaption }, { quoted: msg });
 
         } catch (e) {
             console.error(e);
