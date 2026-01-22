@@ -70,6 +70,10 @@ async function menu(sock, chatId, text, key, msg) {
 │ ➤ .cektime / .deltime
 ╰──────────────────────
 ╭─「 📂 *DATABASE HC* 」
+│ ➤ .addbug
+│ ➤ .delbug
+│ ➤ .createhc
+│ ➤ .listbug (Daftar Bug)
 │ ➤ .addhc (Reply File)
 │ ➤ .listhc
 │ ➤ .delhc <nama>
