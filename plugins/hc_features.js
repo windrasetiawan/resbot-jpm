@@ -107,9 +107,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
                 }
 
                 // KIRIM HASIL
-                const caption = `✅ *${customName}*\n🐞 *Bug:* ${selectedBug.name} (${selectedBug.domain})\n⚙️ *Mode:* ${selectedBug.mode}\n\n\`\`\`${finalLink}\`\`\``;
-                await sock.sendMessage(chatId, { text: caption });
-                delete hcSession[sender];
+                await sock.sendMessage(chatId, { text: finalLink });
 
             } catch (e) {
                 console.error(e);
