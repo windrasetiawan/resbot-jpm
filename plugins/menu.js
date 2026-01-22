@@ -83,6 +83,7 @@ async function menu(sock, chatId, text, key, msg) {
 │ ➤ #uploadhc (Reply Zip)
 ╰──────────────────────
 ╭─「 🛠️ *UTILITIES* 」
+│ ➤ .cekid <nomor>
 │ ➤ .cekxl <nomor>
 │ ➤ .tt <link tiktok>
 │ ➤ .ig <link instagram>
