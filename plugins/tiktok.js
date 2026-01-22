@@ -40,7 +40,7 @@ async function tiktok(sock, chatId, text, key, msg) {
         const authorName = data.author?.nickname || data.author?.fullname || data.nickname || "TikTok User";
         const desc = data.title || data.caption || data.description || "No Caption";
 
-        const finalCaption = `✅ *TikTok Downloader*\n\n👤 *User:* ${authorName}\n📝 *Caption:* ${desc}`;
+        const finalCaption = `✅ *Berhasil didownload*\n\n📸 *Username:* ${authorName}\n📃 *Caption:* ${desc}`;
 
         // --- CARI LINK VIDEO (Pencarian Menyeluruh) ---
         // Kita cari link di 'data', 'nowm', 'play', atau 'video' (Prioritas: No Watermark)
