@@ -7,56 +7,70 @@ async function tiktok(sock, chatId, text, key, msg) {
     const url = text.split(" ")[1];
     if (!url) return sock.sendMessage(chatId, { text: "⚠️ Masukkan link TikTok!" });
 
+    // Kirim pesan proses
     await sock.sendMessage(chatId, { text: "⏳ Sedang memproses..." }, { quoted: msg });
 
     try {
-        const response = await fetch(`https://zelapioffciall.koyeb.app/download/tiktok?url=${url}`);
+        // --- UPDATE ENDPOINT API ---
+        const apiUrl = `https://zelapioffciall.koyeb.app/download/tiktok?url=${url}`;
+        const response = await fetch(apiUrl, { method: 'GET' });
         const json = await response.json();
 
-        // Cek Status
-        if (!json.status || !json.result) {
-            return sock.sendMessage(chatId, { text: "❌ Gagal: Respon API kosong atau error." });
+        // Debugging di console (opsional, untuk cek struktur data jika error)
+        console.log("TikTok API Response:", json);
+
+        // Validasi dasar
+        // Beberapa API menyimpan data di json.result, json.data, atau langsung di root
+        const data = json.result || json.data || json;
+
+        if (!data || (json.status === false)) {
+            return sock.sendMessage(chatId, { text: "❌ Gagal: Video tidak ditemukan atau server sibuk." });
         }
-
-        const data = json.result;
         
-        // Ambil Metadata (Info Video) sesuai struktur JSON terbaru
-        const author = data.metadata?.creator || data.creator || "-";
-        const title = data.metadata?.title || data.metadata?.description || "-";
-        const caption = `✅ *Berhasil Didownload*\n📸 Username : ${author}\n📃 Caption : ${title}`;
+        // Ambil Info Username & Caption
+        // Cek berbagai kemungkinan key agar kompatibel
+        const username = data.author || data.nickname || data.unique_id || data.username || "TikTok User";
+        const desc = data.title || data.description || data.caption || "No Caption";
 
-        // 1. Cek Slide Foto (Images)
-        if (data.images && data.images.length > 0) {
-            for (let img of data.images) {
+        // Format Caption Akhir
+        const finalCaption = `✅ *TikTok Downloader*\n\n👤 *Username:* ${username}\n📝 *Caption:* ${desc}`;
+
+        // Cek URL Video di berbagai kemungkinan key (Prioritas No Watermark)
+        const videoUrl = data.nowm || data.play || data.video || data.download_url || data.link || (data.url ? data.url[0] : null);
+        
+        // Cek Slide Gambar
+        const images = data.images || data.slide;
+
+        // --- LOGIC PENGIRIMAN ---
+        
+        // 1. Jika Slide Gambar (Prioritas)
+        if (images && Array.isArray(images) && images.length > 0) {
+            await sock.sendMessage(chatId, { text: `📸 Mengirim ${images.length} slide gambar...` }, { quoted: msg });
+            
+            for (let img of images) {
                 await sock.sendMessage(chatId, { image: { url: img } });
             }
-            return sock.sendMessage(chatId, { text: "✅ Selesai mengirim slide." });
-        }
-
-        // 2. Cek Video (FIX: Ambil dari array 'urls')
-        let videoUrl = null;
-
-        // Coba ambil dari 'urls' urutan pertama (paling umum di API ini)
-        if (data.urls && Array.isArray(data.urls) && data.urls.length > 0) {
-            videoUrl = data.urls[0];
+            // Kirim caption terpisah di akhir slide
+            await sock.sendMessage(chatId, { text: finalCaption });
         } 
-        // Backup: Coba cari key lain siapa tau format berubah lagi
-        else {
-            videoUrl = data.video || data.play || data.hdplay; 
-        }
-
-        if (videoUrl) {
+        
+        // 2. Jika Video
+        else if (videoUrl) {
             await sock.sendMessage(chatId, { 
                 video: { url: videoUrl }, 
-                caption: caption 
+                caption: finalCaption,
+                mimetype: 'video/mp4'
             }, { quoted: msg });
-        } else {
-            sock.sendMessage(chatId, { text: "❌ Link video tidak ditemukan dalam respon API." });
+        } 
+        
+        // 3. Jika Gagal (Tidak ada media valid)
+        else {
+            sock.sendMessage(chatId, { text: "❌ Media tidak valid (Link video/gambar tidak ditemukan di respon API)." });
         }
 
     } catch (e) {
         console.error("TikTok Error:", e);
-        sock.sendMessage(chatId, { text: "❌ Terjadi kesalahan sistem." });
+        sock.sendMessage(chatId, { text: "❌ Terjadi kesalahan sistem atau API Down." });
     }
 }
 
