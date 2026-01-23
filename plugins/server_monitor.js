@@ -9,52 +9,68 @@ const settingsPath = "./DATABASE/settings.json";
 // Inisialisasi Database Server
 if (!fs.existsSync("./DATABASE")) fs.mkdirSync("./DATABASE");
 if (!fs.existsSync(dbPath)) {
-    const defaultServers = [
-        { host: "udp-premium.wintunneling.web.id", port: 80 },
-        { host: "vvip.wintunneling.web.id", port: 80 },
-        { host: "udp-premium.windratuneup.my.id", port: 80 },
-        { host: "premium.wintunneling.web.id", port: 80 }
-    ];
-    fs.writeFileSync(dbPath, JSON.stringify(defaultServers, null, 2));
+    fs.writeFileSync(dbPath, "[]");
 }
 
 // Penyimpanan Status Terakhir (Memori Sementara)
 const serverStatus = {}; 
 let monitorInterval = null;
 
-// Fungsi Cek Port
-const checkPort = (host, port) => {
+// Fungsi Helper: Sleep
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Fungsi Cek Port (Satu Kali Percobaan)
+const checkPortAttempt = (host, port) => {
     return new Promise((resolve) => {
         const socket = new net.Socket();
-        socket.setTimeout(2000); // Timeout 2 detik sesuai request
+        let isOnline = false;
+
+        // TIMEOUT DIPERPANJANG JADI 5 DETIK (Agar tidak mudah RTO)
+        socket.setTimeout(5000); 
 
         socket.on('connect', () => {
+            isOnline = true;
             socket.destroy();
-            resolve(true); // ON
         });
 
         socket.on('timeout', () => {
             socket.destroy();
-            resolve(false); // OFF
         });
 
         socket.on('error', (err) => {
+            // Error koneksi (Connection Refused / Host Unreachable)
             socket.destroy();
-            resolve(false); // OFF
+        });
+
+        socket.on('close', () => {
+            resolve(isOnline);
         });
 
         socket.connect(port, host);
     });
 };
 
+// 🛡️ FUNGSI CEK UTAMA DENGAN RETRY 3X
+// Mencegah status "OFF" palsu hanya karena lag sesaat
+const checkPort = async (host, port) => {
+    for (let i = 0; i < 3; i++) {
+        const status = await checkPortAttempt(host, port);
+        if (status) return true; // Jika sukses connect, langsung return ON
+        await sleep(1000); // Jika gagal, tunggu 1 detik lalu coba lagi
+    }
+    return false; // Jika 3x dicoba tetap gagal, baru vonis OFF
+};
+
 // Fungsi Utama Loop Monitoring
 export const startMonitor = (sock) => {
     if (monitorInterval) clearInterval(monitorInterval);
 
-    console.log("🚀 Server Monitor Started...");
+    console.log("🚀 Server Monitor Started (with Retry System)...");
 
     monitorInterval = setInterval(async () => {
-        const servers = JSON.parse(fs.readFileSync(dbPath));
+        let servers = [];
+        try { servers = JSON.parse(fs.readFileSync(dbPath)); } catch {}
+        
         let settings = {};
         try { settings = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
 
@@ -62,21 +78,23 @@ export const startMonitor = (sock) => {
 
         for (const s of servers) {
             const key = `${s.host}:${s.port}`;
+            
+            // Cek status server
             const isOnline = await checkPort(s.host, s.port);
             
-            // Inisialisasi status awal jika belum ada
+            // Inisialisasi status awal (Jangan kirim notif saat bot baru nyala)
             if (serverStatus[key] === undefined) {
                 serverStatus[key] = isOnline;
                 continue;
             }
 
-            // Jika Status BERUBAH
+            // Jika Status BERUBAH (ON -> OFF atau OFF -> ON)
             if (serverStatus[key] !== isOnline) {
                 serverStatus[key] = isOnline; // Update status baru
 
-                // Kirim Notifikasi jika Channel ID sudah diset
+                // Kirim Notifikasi ke Channel
                 if (notifChannel) {
-                    const statusText = isOnline ? "✅ *SERVER ACTIVE (ON)*" : "⚠️ *SERVER DOWN (OFF)*";
+                    const statusText = isOnline ? "✅ *SERVER ACTIVE (ON)*" : "🔴 *SERVER DOWN (OFF)*";
                     const msg = `${statusText}\n\n` +
                                 `🖥️ *Host:* ${s.host}\n` +
                                 `🔌 *Port:* ${s.port}\n` +
@@ -114,13 +132,24 @@ async function serverMonitor(sock, chatId, text, key, msg) {
     }
 
     if (cmd === ".listserver") {
-        const servers = JSON.parse(fs.readFileSync(dbPath));
-        let txt = "🖥️ *DAFTAR SERVER MONITORING:*\n\n";
-        servers.forEach((s, i) => {
-            const status = serverStatus[`${s.host}:${s.port}`] ? "✅ ON" : "🔴 OFF";
-            txt += `${i+1}. ${s.host} (${s.port}) [${status}]\n`;
-        });
-        return sock.sendMessage(chatId, { text: txt });
+        let servers = [];
+        try { servers = JSON.parse(fs.readFileSync(dbPath)); } catch {}
+        
+        if (servers.length === 0) return sock.sendMessage(chatId, { text: "Belum ada server yang dimonitor." });
+
+        // Cek status real-time saat command diketik
+        let txt = "🖥️ *DAFTAR SERVER MONITORING:*\n(Sedang mengecek status...)\n\n";
+        await sock.sendMessage(chatId, { text: txt });
+
+        let resultTxt = "🖥️ *DAFTAR SERVER MONITORING:*\n\n";
+        for (let i = 0; i < servers.length; i++) {
+            const s = servers[i];
+            const isAlive = await checkPort(s.host, s.port); // Cek langsung
+            const icon = isAlive ? "✅ ON" : "🔴 OFF";
+            resultTxt += `${i+1}. ${s.host} (${s.port}) [${icon}]\n`;
+        }
+        
+        return sock.sendMessage(chatId, { text: resultTxt });
     }
 
     if (cmd === ".addserver") {
@@ -128,7 +157,9 @@ async function serverMonitor(sock, chatId, text, key, msg) {
         const [host, port] = input.split("|");
         if (!host) return sock.sendMessage(chatId, { text: "⚠️ Format: .addserver domain|port" });
         
-        const servers = JSON.parse(fs.readFileSync(dbPath));
+        let servers = [];
+        try { servers = JSON.parse(fs.readFileSync(dbPath)); } catch {}
+
         servers.push({ host: host.trim(), port: parseInt(port) || 80 });
         fs.writeFileSync(dbPath, JSON.stringify(servers, null, 2));
         
@@ -137,7 +168,9 @@ async function serverMonitor(sock, chatId, text, key, msg) {
 
     if (cmd === ".delserver") {
         const host = args[0];
-        let servers = JSON.parse(fs.readFileSync(dbPath));
+        let servers = [];
+        try { servers = JSON.parse(fs.readFileSync(dbPath)); } catch {}
+
         const initialLen = servers.length;
         servers = servers.filter(s => s.host !== host);
         
@@ -151,4 +184,4 @@ async function serverMonitor(sock, chatId, text, key, msg) {
 }
 
 export default serverMonitor;
-              
+                                     
