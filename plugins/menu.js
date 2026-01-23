@@ -84,6 +84,9 @@ async function menu(sock, chatId, text, key, msg) {
 ╰──────────────────────
 ╭─「 🛠️ *UTILITIES* 」
 │ ➤ .cekid <nomor>
+│ ➤ .setmonitorid
+│ ➤ .listserver
+│ ➤ .addserver
 │ ➤ .cekxl <nomor>
 │ ➤ .tt <link tiktok>
 │ ➤ .ig <link instagram>
