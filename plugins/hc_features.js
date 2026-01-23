@@ -3,12 +3,10 @@ import path from "path";
 import AdmZip from "adm-zip";
 import { downloadAndSaveMedia, isOwner } from "../lib/utils.js";
 
-// Session and database configuration
 const hcSession = {}; 
 const dbBugPath = "./DATABASE/bug_list.json"; 
 const dbHC = "./DATABASE/HC"; 
 
-// Helper functions for database
 const getBugs = () => {
     if (!fs.existsSync("./DATABASE")) fs.mkdirSync("./DATABASE");
     if (!fs.existsSync(dbBugPath)) fs.writeFileSync(dbBugPath, "[]");
@@ -22,23 +20,18 @@ async function hcFeatures(sock, chatId, text, key, msg) {
     const cmd = text.split(" ")[0].toLowerCase();
     const args = text.split(" ").slice(1).join(" ");
     
-    // Ensure database folder exists
     if (!fs.existsSync(dbHC)) fs.mkdirSync(dbHC, { recursive: true });
     
-    // Check owner
     const isCreator = isOwner(sender);
 
-    // Handle interactive session for config creation
     if (hcSession[sender]) {
         const session = hcSession[sender];
 
-        // Cancel feature
         if (text.toLowerCase() === "batal" || text.toLowerCase() === "cancel") {
             delete hcSession[sender];
             return sock.sendMessage(chatId, { text: "❌ Proses dibatalkan." });
         }
 
-        // Step 1: Select Bug
         if (session.step === "select_bug") {
             const selection = parseInt(textTrimmed);
             const bugs = getBugs();
@@ -55,7 +48,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
             });
         }
 
-        // Step 2: Input Name and Generate
         if (session.step === "input_name") {
             const customName = textTrimmed;
             const link = session.link;
@@ -105,7 +97,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
                     if (finalLink.endsWith("/") && !link.endsWith("/")) finalLink = finalLink.slice(0, -1);
                 }
 
-                // Send Result
                 await sock.sendMessage(chatId, { text: finalLink });
 
             } catch (e) {
@@ -113,13 +104,11 @@ async function hcFeatures(sock, chatId, text, key, msg) {
                 sock.sendMessage(chatId, { text: "❌ Gagal memproses config. Link mungkin rusak." });
             }
             
-            // Clean up session
             delete hcSession[sender];
             return;
         }
     }
 
-    // .addhc command
     if (cmd === ".addhc" && isCreator) {
         const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         if (!q?.documentMessage) return sock.sendMessage(chatId, { text: "❌ Reply file dokumen!" });
@@ -136,7 +125,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: `✅ Saved: ${name}` });
     }
 
-    // #uploadhc command
     if (cmd === "#uploadhc" && isCreator) {
         const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const isZip = q?.documentMessage?.fileName.endsWith(".zip") || q?.documentMessage?.mimetype === "application/zip";
@@ -171,7 +159,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // #wintuneling command
     if (cmd === "#wintuneling") {
         const files = fs.readdirSync(dbHC);
         const validFiles = files.filter(f => fs.statSync(path.join(dbHC, f)).isFile());
@@ -192,7 +179,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return;
     }
 
-    // .listhc command
     if (cmd === ".listhc") {
         const files = fs.readdirSync(dbHC);
         const validFiles = files.filter(f => fs.statSync(path.join(dbHC, f)).isFile());
@@ -202,7 +188,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: t });
     }
 
-    // #namafile command
     if (text.startsWith("#") && cmd !== "#uploadhc" && cmd !== "#wintuneling") {
         const query = text.slice(1).trim().toLowerCase();
         if (!query) return;
@@ -229,7 +214,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // .delhc command
     if (cmd === ".delhc" && isCreator) {
         const fileName = args;
         const p = path.join(dbHC, fileName);
@@ -241,7 +225,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // .delallhc command
     if (cmd === ".delallhc" && isCreator) {
         try {
             const files = fs.readdirSync(dbHC);
@@ -258,9 +241,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // Template management commands
-    
-    // .addbug command
     if (cmd === ".addbug" && isCreator) {
         const content = args;
         const [name, domain, mode] = content.split("|");
@@ -281,7 +261,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: `✅ Bug *${name}* berhasil ditambahkan.` });
     }
 
-    // .delbug command
     if (cmd === ".delbug" && isCreator) {
         const content = args;
         let bugs = getBugs();
@@ -305,7 +284,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // .listbug command
     if (cmd === ".listbug") {
         const bugs = getBugs();
         if (bugs.length === 0) return sock.sendMessage(chatId, { text: "📂 Database Bug Kosong." });
@@ -316,7 +294,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: msg });
     }
     
-    // .createhc command
     if (cmd === ".createhc" || cmd === ".buathc") {
         const link = args; 
 
@@ -341,12 +318,17 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: menu });
     }
 
-    // .cekid command
     if (cmd === ".cekid") {
         let target = "";
         let type = "";
+        let newsletterInfo = null;
 
-        if (msg.message?.extendedTextMessage?.contextInfo?.participant) {
+        if (msg.message?.extendedTextMessage?.contextInfo?.forwardedNewsletterMessageInfo) {
+            newsletterInfo = msg.message.extendedTextMessage.contextInfo.forwardedNewsletterMessageInfo;
+            target = newsletterInfo.newsletterJid;
+            type = "Channel / Newsletter (Forwarded)";
+        }
+        else if (msg.message?.extendedTextMessage?.contextInfo?.participant) {
             target = msg.message.extendedTextMessage.contextInfo.participant;
             type = "Reply Target";
         } 
@@ -357,7 +339,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         else if (args) {
             const inputNumber = args.replace(/[^0-9]/g, "");
             if (inputNumber.length > 5) {
-                target = inputNumber + "@s.whatsapp.net";
+                target = inputNumber + (inputNumber.length > 15 ? "@newsletter" : "@s.whatsapp.net");
                 type = "Input Manual";
             } else {
                 return sock.sendMessage(chatId, { text: "⚠️ Nomor terlalu pendek/salah." });
@@ -370,14 +352,19 @@ async function hcFeatures(sock, chatId, text, key, msg) {
 
         const cleanNumber = target.split('@')[0].split(':')[0];
 
-        const infoText = `🔍 *INFORMASI ID WHATSAPP*\n` +
-                         `🎯 *Tipe:* ${type}\n\n` +
-                         `✅ *ID MURNI (Untuk Database/Owner):*\n` +
-                         `${cleanNumber}\n\n` +
-                         `🆔 *JID LENGKAP (Sistem):*\n${target}`;
+        let infoText = `🔍 *INFORMASI ID WHATSAPP*\n` +
+                       `🎯 *Tipe:* ${type}\n\n` +
+                       `✅ *ID MURNI:*\n` +
+                       `${cleanNumber}\n\n` +
+                       `🆔 *JID LENGKAP:*\n${target}`;
+        
+        if (newsletterInfo) {
+            infoText += `\n\n📢 *Info Channel:*\nName: ${newsletterInfo.newsletterName}\nID Server: ${newsletterInfo.serverMessageId}`;
+        }
 
         return sock.sendMessage(chatId, { text: infoText }, { quoted: msg });
     }
 }
 
 export default hcFeatures;
+                
