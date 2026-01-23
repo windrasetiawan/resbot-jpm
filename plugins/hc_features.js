@@ -24,6 +24,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
     
     const isCreator = isOwner(sender);
 
+    // LOGIKA SESSION (CREATE CONFIG)
     if (hcSession[sender]) {
         const session = hcSession[sender];
 
@@ -109,6 +110,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
+    // .addhc
     if (cmd === ".addhc" && isCreator) {
         const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         if (!q?.documentMessage) return sock.sendMessage(chatId, { text: "❌ Reply file dokumen!" });
@@ -125,6 +127,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: `✅ Saved: ${name}` });
     }
 
+    // #uploadhc
     if (cmd === "#uploadhc" && isCreator) {
         const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const isZip = q?.documentMessage?.fileName.endsWith(".zip") || q?.documentMessage?.mimetype === "application/zip";
@@ -159,6 +162,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
+    // #wintuneling
     if (cmd === "#wintuneling") {
         const files = fs.readdirSync(dbHC);
         const validFiles = files.filter(f => fs.statSync(path.join(dbHC, f)).isFile());
@@ -179,6 +183,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return;
     }
 
+    // .listhc
     if (cmd === ".listhc") {
         const files = fs.readdirSync(dbHC);
         const validFiles = files.filter(f => fs.statSync(path.join(dbHC, f)).isFile());
@@ -188,6 +193,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: t });
     }
 
+    // Search #namafile
     if (text.startsWith("#") && cmd !== "#uploadhc" && cmd !== "#wintuneling") {
         const query = text.slice(1).trim().toLowerCase();
         if (!query) return;
@@ -214,6 +220,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
+    // .delhc
     if (cmd === ".delhc" && isCreator) {
         const fileName = args;
         const p = path.join(dbHC, fileName);
@@ -225,6 +232,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
+    // .delallhc
     if (cmd === ".delallhc" && isCreator) {
         try {
             const files = fs.readdirSync(dbHC);
@@ -241,6 +249,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
+    // Template Bug
     if (cmd === ".addbug" && isCreator) {
         const content = args;
         const [name, domain, mode] = content.split("|");
@@ -294,6 +303,7 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: msg });
     }
     
+    // .createhc
     if (cmd === ".createhc" || cmd === ".buathc") {
         const link = args; 
 
@@ -318,48 +328,75 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: menu });
     }
 
+    // .cekid (DETEKSI REPLY CHANNEL)
     if (cmd === ".cekid") {
         let target = "";
         let type = "";
         let newsletterInfo = null;
+        
+        // Ambil konteks pesan yang di-quote/reply
+        const context = msg.message?.extendedTextMessage?.contextInfo;
+        const quoted = context?.quotedMessage;
 
-        if (msg.message?.extendedTextMessage?.contextInfo?.forwardedNewsletterMessageInfo) {
-            newsletterInfo = msg.message.extendedTextMessage.contextInfo.forwardedNewsletterMessageInfo;
-            target = newsletterInfo.newsletterJid;
-            type = "Channel / Newsletter (Forwarded)";
-        }
-        else if (msg.message?.extendedTextMessage?.contextInfo?.participant) {
-            target = msg.message.extendedTextMessage.contextInfo.participant;
-            type = "Reply Target";
-        } 
-        else if (msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length > 0) {
-            target = msg.message.extendedTextMessage.contextInfo.mentionedJid[0];
-            type = "Mention Target";
-        } 
-        else if (args) {
-            const inputNumber = args.replace(/[^0-9]/g, "");
-            if (inputNumber.length > 5) {
-                target = inputNumber + (inputNumber.length > 15 ? "@newsletter" : "@s.whatsapp.net");
-                type = "Input Manual";
-            } else {
-                return sock.sendMessage(chatId, { text: "⚠️ Nomor terlalu pendek/salah." });
+        // 1. CEK: Apakah pesan yang di-reply adalah Forwardan Channel?
+        // Kita loop semua kemungkinan tipe pesan (text, image, video) di dalam quoted
+        if (quoted) {
+            for (const key in quoted) {
+                const qContent = quoted[key];
+                // Cari properti 'forwardedNewsletterMessageInfo'
+                if (qContent?.contextInfo?.forwardedNewsletterMessageInfo) {
+                    newsletterInfo = qContent.contextInfo.forwardedNewsletterMessageInfo;
+                    type = "Channel / Newsletter (Reply)";
+                    target = newsletterInfo.newsletterJid;
+                    break;
+                }
             }
         }
-        else {
-            target = msg.key.participant || msg.key.remoteJid;
-            type = "Diri Sendiri";
+
+        // 2. CEK: Jika tidak ada di quoted, cek apakah pesan ini sendiri forwardan?
+        if (!newsletterInfo && context?.forwardedNewsletterMessageInfo) {
+            newsletterInfo = context.forwardedNewsletterMessageInfo;
+            type = "Channel / Newsletter (Direct)";
+            target = newsletterInfo.newsletterJid;
+        }
+
+        // 3. JIKA BUKAN CHANNEL, Cek ID Biasa (User/Group)
+        if (!newsletterInfo) {
+            if (context?.participant) {
+                target = context.participant;
+                type = "Reply User";
+            } 
+            else if (context?.mentionedJid?.length > 0) {
+                target = context.mentionedJid[0];
+                type = "Mention User";
+            } 
+            else if (args) {
+                const inputNumber = args.replace(/[^0-9]/g, "");
+                if (inputNumber.length > 5) {
+                    // Tebak ini user biasa atau channel manual (jarang berhasil utk channel)
+                    target = inputNumber + (inputNumber.length > 18 ? "@newsletter" : "@s.whatsapp.net");
+                    type = "Input Manual";
+                } else {
+                    return sock.sendMessage(chatId, { text: "⚠️ Nomor terlalu pendek/salah." });
+                }
+            }
+            else {
+                target = msg.key.participant || msg.key.remoteJid;
+                type = "Diri Sendiri";
+            }
         }
 
         const cleanNumber = target.split('@')[0].split(':')[0];
 
         let infoText = `🔍 *INFORMASI ID WHATSAPP*\n` +
                        `🎯 *Tipe:* ${type}\n\n` +
-                       `✅ *ID MURNI:*\n` +
-                       `${cleanNumber}\n\n` +
-                       `🆔 *JID LENGKAP:*\n${target}`;
+                       `✅ *ID MURNI (Untuk Config):*\n` +
+                       `${target}\n\n`; // Tampilkan full ID agar tidak salah ambil
         
         if (newsletterInfo) {
-            infoText += `\n\n📢 *Info Channel:*\nName: ${newsletterInfo.newsletterName}\nID Server: ${newsletterInfo.serverMessageId}`;
+            infoText += `📢 *Info Channel:*\nName: ${newsletterInfo.newsletterName}\nID Server: ${newsletterInfo.newsletterJid}`;
+        } else {
+            infoText += `🆔 *JID LENGKAP:*\n${target}`;
         }
 
         return sock.sendMessage(chatId, { text: infoText }, { quoted: msg });
@@ -367,4 +404,4 @@ async function hcFeatures(sock, chatId, text, key, msg) {
 }
 
 export default hcFeatures;
-                
+                        
