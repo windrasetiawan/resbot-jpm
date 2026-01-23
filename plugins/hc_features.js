@@ -24,7 +24,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
     
     const isCreator = isOwner(sender);
 
-    // LOGIKA SESSION (CREATE CONFIG)
     if (hcSession[sender]) {
         const session = hcSession[sender];
 
@@ -110,7 +109,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // .addhc
     if (cmd === ".addhc" && isCreator) {
         const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         if (!q?.documentMessage) return sock.sendMessage(chatId, { text: "❌ Reply file dokumen!" });
@@ -127,7 +125,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: `✅ Saved: ${name}` });
     }
 
-    // #uploadhc
     if (cmd === "#uploadhc" && isCreator) {
         const q = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const isZip = q?.documentMessage?.fileName.endsWith(".zip") || q?.documentMessage?.mimetype === "application/zip";
@@ -162,7 +159,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // #wintuneling
     if (cmd === "#wintuneling") {
         const files = fs.readdirSync(dbHC);
         const validFiles = files.filter(f => fs.statSync(path.join(dbHC, f)).isFile());
@@ -183,7 +179,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return;
     }
 
-    // .listhc
     if (cmd === ".listhc") {
         const files = fs.readdirSync(dbHC);
         const validFiles = files.filter(f => fs.statSync(path.join(dbHC, f)).isFile());
@@ -193,7 +188,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: t });
     }
 
-    // Search #namafile
     if (text.startsWith("#") && cmd !== "#uploadhc" && cmd !== "#wintuneling") {
         const query = text.slice(1).trim().toLowerCase();
         if (!query) return;
@@ -220,7 +214,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // .delhc
     if (cmd === ".delhc" && isCreator) {
         const fileName = args;
         const p = path.join(dbHC, fileName);
@@ -232,7 +225,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // .delallhc
     if (cmd === ".delallhc" && isCreator) {
         try {
             const files = fs.readdirSync(dbHC);
@@ -249,7 +241,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // Template Bug
     if (cmd === ".addbug" && isCreator) {
         const content = args;
         const [name, domain, mode] = content.split("|");
@@ -303,7 +294,6 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: msg });
     }
     
-    // .createhc
     if (cmd === ".createhc" || cmd === ".buathc") {
         const link = args; 
 
@@ -328,40 +318,61 @@ async function hcFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: menu });
     }
 
-    // .cekid (DETEKSI REPLY CHANNEL)
     if (cmd === ".cekid") {
         let target = "";
         let type = "";
         let newsletterInfo = null;
-        
-        // Ambil konteks pesan yang di-quote/reply
-        const context = msg.message?.extendedTextMessage?.contextInfo;
-        const quoted = context?.quotedMessage;
+        let isChannelLink = false;
 
-        // 1. CEK: Apakah pesan yang di-reply adalah Forwardan Channel?
-        // Kita loop semua kemungkinan tipe pesan (text, image, video) di dalam quoted
-        if (quoted) {
-            for (const key in quoted) {
-                const qContent = quoted[key];
-                // Cari properti 'forwardedNewsletterMessageInfo'
-                if (qContent?.contextInfo?.forwardedNewsletterMessageInfo) {
-                    newsletterInfo = qContent.contextInfo.forwardedNewsletterMessageInfo;
-                    type = "Channel / Newsletter (Reply)";
-                    target = newsletterInfo.newsletterJid;
-                    break;
-                }
+        const quotedText = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || 
+                           msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text || "";
+        
+        const linkRegex = /whatsapp\.com\/channel\/([A-Za-z0-9]+)/;
+        const linkMatch = args.match(linkRegex) || quotedText.match(linkRegex);
+
+        if (linkMatch) {
+            try {
+                const code = linkMatch[1]; 
+                
+                const metadata = await sock.newsletterMetadata("invite", code);
+                
+                newsletterInfo = {
+                    newsletterJid: metadata.id,
+                    newsletterName: metadata.name
+                };
+                type = "Link Channel (Resolved)";
+                target = metadata.id;
+                isChannelLink = true;
+
+            } catch (e) {
+                return sock.sendMessage(chatId, { text: "❌ Link Channel tidak valid atau Bot gagal mengambil data." });
             }
         }
 
-        // 2. CEK: Jika tidak ada di quoted, cek apakah pesan ini sendiri forwardan?
-        if (!newsletterInfo && context?.forwardedNewsletterMessageInfo) {
-            newsletterInfo = context.forwardedNewsletterMessageInfo;
-            type = "Channel / Newsletter (Direct)";
-            target = newsletterInfo.newsletterJid;
+        if (!isChannelLink) {
+            const context = msg.message?.extendedTextMessage?.contextInfo;
+            const quoted = context?.quotedMessage;
+
+            if (quoted) {
+                for (const key in quoted) {
+                    const qContent = quoted[key];
+                    if (qContent?.contextInfo?.forwardedNewsletterMessageInfo) {
+                        newsletterInfo = qContent.contextInfo.forwardedNewsletterMessageInfo;
+                        type = "Channel / Newsletter (Reply Forward)";
+                        target = newsletterInfo.newsletterJid;
+                        break;
+                    }
+                }
+            }
+            if (!newsletterInfo && context?.forwardedNewsletterMessageInfo) {
+                newsletterInfo = context.forwardedNewsletterMessageInfo;
+                type = "Channel / Newsletter (Direct Forward)";
+                target = newsletterInfo.newsletterJid;
+            }
         }
 
-        // 3. JIKA BUKAN CHANNEL, Cek ID Biasa (User/Group)
-        if (!newsletterInfo) {
+        if (!newsletterInfo && !isChannelLink) {
+            const context = msg.message?.extendedTextMessage?.contextInfo;
             if (context?.participant) {
                 target = context.participant;
                 type = "Reply User";
@@ -373,9 +384,8 @@ async function hcFeatures(sock, chatId, text, key, msg) {
             else if (args) {
                 const inputNumber = args.replace(/[^0-9]/g, "");
                 if (inputNumber.length > 5) {
-                    // Tebak ini user biasa atau channel manual (jarang berhasil utk channel)
-                    target = inputNumber + (inputNumber.length > 18 ? "@newsletter" : "@s.whatsapp.net");
-                    type = "Input Manual";
+                    target = inputNumber + "@s.whatsapp.net";
+                    type = "Input Manual (User)";
                 } else {
                     return sock.sendMessage(chatId, { text: "⚠️ Nomor terlalu pendek/salah." });
                 }
@@ -386,17 +396,18 @@ async function hcFeatures(sock, chatId, text, key, msg) {
             }
         }
 
-        const cleanNumber = target.split('@')[0].split(':')[0];
-
         let infoText = `🔍 *INFORMASI ID WHATSAPP*\n` +
-                       `🎯 *Tipe:* ${type}\n\n` +
-                       `✅ *ID MURNI (Untuk Config):*\n` +
-                       `${target}\n\n`; // Tampilkan full ID agar tidak salah ambil
-        
+                       `🎯 *Tipe:* ${type}\n\n`;
+
         if (newsletterInfo) {
-            infoText += `📢 *Info Channel:*\nName: ${newsletterInfo.newsletterName}\nID Server: ${newsletterInfo.newsletterJid}`;
+            infoText += `✅ *ID CHANNEL (Untuk Config):*\n` +
+                        `${newsletterInfo.newsletterJid}\n\n` +
+                        `📢 *Nama Channel:* ${newsletterInfo.newsletterName}`;
         } else {
-            infoText += `🆔 *JID LENGKAP:*\n${target}`;
+            const cleanNumber = target.split('@')[0].split(':')[0];
+            infoText += `✅ *ID MURNI:*\n` +
+                        `${cleanNumber}\n\n` +
+                        `🆔 *JID LENGKAP:*\n${target}`;
         }
 
         return sock.sendMessage(chatId, { text: infoText }, { quoted: msg });
@@ -404,4 +415,5 @@ async function hcFeatures(sock, chatId, text, key, msg) {
 }
 
 export default hcFeatures;
-                        
+    
+                    
