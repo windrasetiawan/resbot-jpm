@@ -13,12 +13,10 @@ import makeWASocket, {
     makeCacheableSignalKeyStore
 } from "@whiskeysockets/baileys";
 
-// HELPERS
 import { ChangeStatus, isOwner } from "./lib/utils.js"; 
 import { addGroupLinks } from "./lib/grupLinkStore.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
-// PLUGINS
 import groupFeatures, { runGroupSchedule } from "./plugins/group_features.js"; 
 import admin from "./plugins/admin.js"; 
 import ping from "./plugins/ping.js";
@@ -32,10 +30,10 @@ import listgc from "./plugins/listgc.js";
 import tiktok from "./plugins/tiktok.js";
 import owner from "./plugins/owner.js";
 import igdl from "./plugins/igdl.js";
+import serverMonitor, { startMonitor } from "./plugins/server_monitor.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// DATABASE INIT
 const dbFolder = path.join(__dirname, "DATABASE");
 if (!fs.existsSync(dbFolder)) fs.mkdirSync(dbFolder, { recursive: true });
 const settingsPath = path.join(dbFolder, "settings.json");
@@ -90,7 +88,10 @@ async function startBot() {
             console.log(clc.green("TERHUBUNG!"));
             ChangeStatus(__dirname + "/sessions/", "connected");
             resumeAutoJPM(sock);
+            
+            // JALANKAN INTERVAL
             setInterval(() => { runGroupSchedule(sock); }, 60000);
+            startMonitor(sock); // START SERVER MONITOR
         }
     });
 
@@ -105,7 +106,6 @@ async function startBot() {
 
 async function handleMsg(sock, msg) {
     try {
-        // Definisi variabel dasar
         const chatId = msg.key.remoteJid;
         const isGroup = chatId.endsWith('@g.us');
         const sender = jidNormalizedUser(isGroup ? (msg.key.participant || msg.key.remoteJid) : chatId);
@@ -114,7 +114,6 @@ async function handleMsg(sock, msg) {
         let db = {};
         try { db = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
 
-        // Auto Join Logic
         if (db.autojoin && (text.includes("chat.whatsapp.com") || text.includes("wa.me"))) {
             const code = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
             if (code && code[1]) {
@@ -124,10 +123,8 @@ async function handleMsg(sock, msg) {
 
         await groupFeatures(sock, chatId, text, msg.key, msg);
 
-        // Cek Mode Self
         if (db.mode === 'self' && !isOwner(sender)) return;
 
-        // Jalankan Plugin Lainnya
         await Promise.all([
             ping(sock, chatId, text, msg.key, msg),
             menu(sock, chatId, text, msg.key, msg),
@@ -140,7 +137,8 @@ async function handleMsg(sock, msg) {
             listgc(sock, chatId, text, msg.key, msg),
             tiktok(sock, chatId, text, msg.key, msg),
             owner(sock, chatId, text, msg.key, msg),
-            igdl(sock, chatId, text, msg.key, msg) 
+            igdl(sock, chatId, text, msg.key, msg),
+            serverMonitor(sock, chatId, text, msg.key, msg) // TAMBAHKAN PLUGIN MONITOR
         ]);
 
     } catch (e) {
@@ -149,3 +147,4 @@ async function handleMsg(sock, msg) {
 }
 
 startBot();
+                                                  
