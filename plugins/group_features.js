@@ -18,49 +18,86 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         try { db = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
     }
 
-    // 1. LOGIKA INTERAKTIF OUT GRUP
+    // 1. LOGIKA MULTI OUT GRUP (INTERAKTIF)
     if (outSession[sender] && isCreator) {
-        if (text.toLowerCase() === "batal") {
+        if (text.toLowerCase() === "batal" || text.toLowerCase() === "cancel") {
             delete outSession[sender];
-            return sock.sendMessage(chatId, { text: "Proses dibatalkan." });
+            return sock.sendMessage(chatId, { text: "❌ Proses Multi-Out dibatalkan." });
         }
 
-        const selection = parseInt(text.trim());
         const groups = outSession[sender];
+        const input = text.trim();
+        let indexes = [];
 
-        if (isNaN(selection) || selection < 1 || selection > groups.length) {
-            return sock.sendMessage(chatId, { text: "Nomor salah. Masukkan nomor yang benar atau ketik 'batal'." });
+        // Parsing Input (Bisa "1,3,5" atau "1-3" atau "all")
+        if (input.toLowerCase() === "all") {
+            indexes = groups.map((_, i) => i);
+        } else {
+            const parts = input.split(',');
+            for (let part of parts) {
+                if (part.includes('-')) {
+                    const [start, end] = part.split('-').map(Number);
+                    if (!isNaN(start) && !isNaN(end)) {
+                        for (let i = start; i <= end; i++) indexes.push(i - 1);
+                    }
+                } else {
+                    const idx = parseInt(part) - 1;
+                    if (!isNaN(idx)) indexes.push(idx);
+                }
+            }
         }
 
-        const selectedGroup = groups[selection - 1];
-        try {
-            await sock.sendMessage(chatId, { text: `Sedang keluar dari grup: ${selectedGroup.subject}...` });
-            await sock.groupLeave(selectedGroup.id);
-            await sock.sendMessage(chatId, { text: "Sukses keluar." });
-        } catch (e) {
-            await sock.sendMessage(chatId, { text: `Gagal: ${e.message}` });
+        // Filter valid index
+        indexes = [...new Set(indexes)].filter(i => i >= 0 && i < groups.length);
+
+        if (indexes.length === 0) {
+            return sock.sendMessage(chatId, { text: "⚠️ Pilihan tidak valid. Masukkan nomor yang benar (misal: 1,2,3) atau ketik 'batal'." });
         }
+
+        await sock.sendMessage(chatId, { text: `⏳ Memproses keluar dari ${indexes.length} grup... Mohon tunggu.` });
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let i of indexes) {
+            const targetGroup = groups[i];
+            try {
+                // SILENT LEAVE: Langsung leave tanpa kirim pesan ke grup target
+                await sock.groupLeave(targetGroup.id);
+                successCount++;
+                // Delay sedikit agar aman
+                await new Promise(r => setTimeout(r, 1000));
+            } catch (e) {
+                console.error(`Gagal keluar ${targetGroup.subject}:`, e);
+                failCount++;
+            }
+        }
+
         delete outSession[sender];
-        return;
+        return sock.sendMessage(chatId, { 
+            text: `✅ *PROSES SELESAI*\n\n📤 Berhasil Keluar: ${successCount} Grup\n❌ Gagal: ${failCount} Grup` 
+        });
     }
 
     // 2. COMMAND OUT / LEAVE
     if ((cmd === ".out" || cmd === ".leave") && isCreator) {
         if (isGroup) {
+            // Jika di dalam grup -> Langsung keluar (Silent)
             await sock.groupLeave(chatId);
             return;
         } else {
+            // Jika di Private Chat -> Tampilkan Menu Multi Out
             const groupListObj = await sock.groupFetchAllParticipating();
             const groups = Object.values(groupListObj);
             
             if (groups.length === 0) return sock.sendMessage(chatId, { text: "Bot belum gabung grup manapun." });
 
             outSession[sender] = groups;
-            let msgText = "📊 DAFTAR GRUP:\n";
+            let msgText = "📊 *DAFTAR GRUP BOT:*\n\n";
             groups.forEach((g, i) => {
                 msgText += `${i + 1}. ${g.subject}\n`;
             });
-            msgText += "\nBalas nomor untuk mengeluarkan bot.";
+            msgText += "\n👉 *Cara Pakai:*\n- Ketik nomor (misal: `1`)\n- Ketik banyak (misal: `1,3,5`)\n- Ketik rentang (misal: `1-5`)\n- Ketik `all` untuk keluar semua.\n- Ketik `batal` untuk cancel.";
             return sock.sendMessage(chatId, { text: msgText });
         }
     }
@@ -85,7 +122,7 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: `Jadwal:\nOpen: ${s?.open||"-"}\nClose: ${s?.close||"-"}` });
     }
 
-    // 4. SETTINGS (.antilink / .autojoin)
+    // 4. SETTINGS (.antilink) - Autojoin DIHAPUS
     if (cmd === ".antilink" && isCreator && isGroup) {
         if (args[0] === "on") {
             if (!db.antilink.includes(chatId)) db.antilink.push(chatId);
@@ -97,12 +134,6 @@ async function groupFeatures(sock, chatId, text, key, msg) {
             fs.writeFileSync(settingsPath, JSON.stringify(db, null, 2));
             return sock.sendMessage(chatId, { text: "Antilink OFF" });
         }
-    }
-
-    if (cmd === ".autojoin" && isCreator) {
-        db.autojoin = (args[0] === "on");
-        fs.writeFileSync(settingsPath, JSON.stringify(db, null, 2));
-        return sock.sendMessage(chatId, { text: `Auto Join: ${db.autojoin ? "ON" : "OFF"}` });
     }
 
     // 5. MONITOR ANTILINK (LIMIT 2X - RESET WIB)
@@ -146,12 +177,10 @@ export async function runGroupSchedule(sock) {
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Jakarta' });
 
     // RESET ANTILINK JAM 00:00 WIB
-    // Membersihkan memori agar tidak penuh dan memastikan reset bersih
     if (now === "00:00") {
         for (const key in promoStore) {
             delete promoStore[key];
         }
-        // Opsional: console.log("Limit antilink di-reset pada 00:00 WIB");
     }
 
     if (!fs.existsSync(settingsPath)) return;
@@ -162,14 +191,15 @@ export async function runGroupSchedule(sock) {
         try {
             if (t.open === now) {
                 await sock.groupSettingUpdate(id, 'not_announcement');
-                await sock.sendMessage(id, { text: "🔓 *Grub sudah di buka kembali (Selamat Pagi)*\n> BY WINTUNELING VPN" });
+                await sock.sendMessage(id, { text: "🔓 *Grub sudah di buka kembali (🌅 Selamat Pagi)*\n> BY WINTUNELING VPN" });
             }
             if (t.close === now) {
                 await sock.groupSettingUpdate(id, 'announcement');
-                await sock.sendMessage(id, { text: "🔒 *Grup ditutup (Selamat Tidur)*\n> BY WINTUNELING VPN" });
+                await sock.sendMessage(id, { text: "🔒 *Grup ditutup sementara (🌃 Selamat Tidur)*\n> BY WINTUNELING VPN" });
             }
         } catch {}
     }
 }
 
 export default groupFeatures;
+            
