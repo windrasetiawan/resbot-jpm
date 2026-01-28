@@ -89,8 +89,9 @@ async function startBot() {
             ChangeStatus(__dirname + "/sessions/", "connected");
             resumeAutoJPM(sock);
             
+            // JALANKAN INTERVAL
             setInterval(() => { runGroupSchedule(sock); }, 60000);
-            startMonitor(sock);
+            startMonitor(sock); // START SERVER MONITOR
         }
     });
 
@@ -114,23 +115,9 @@ async function handleMsg(sock, msg) {
         try { db = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
 
         if (db.autojoin && (text.includes("chat.whatsapp.com") || text.includes("wa.me"))) {
-            const codeMatch = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
-            
-            if (codeMatch && codeMatch[1]) {
-                const inviteCode = codeMatch[1];
-                try {
-                    const groupInfo = await sock.groupGetInviteInfo(inviteCode);
-                    const groupName = groupInfo.subject ? groupInfo.subject.toUpperCase() : "";
-
-                    if (groupName.includes("VPN") || groupName.includes("CONFIG")) {
-                        console.log(clc.green(`✅ Auto Join: ${groupInfo.subject}`));
-                        await sock.groupAcceptInvite(inviteCode);
-                    } else {
-                        console.log(clc.yellow(`⚠️ Skip Join: ${groupInfo.subject}`));
-                    }
-                } catch (e) {
-                    console.log("Link invite invalid atau bot sudah bergabung.");
-                }
+            const code = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
+            if (code && code[1]) {
+                await sock.groupAcceptInvite(code[1]).catch(() => {});
             }
         }
 
@@ -151,7 +138,7 @@ async function handleMsg(sock, msg) {
             tiktok(sock, chatId, text, msg.key, msg),
             owner(sock, chatId, text, msg.key, msg),
             igdl(sock, chatId, text, msg.key, msg),
-            serverMonitor(sock, chatId, text, msg.key, msg)
+            serverMonitor(sock, chatId, text, msg.key, msg) // TAMBAHKAN PLUGIN MONITOR
         ]);
 
     } catch (e) {
@@ -160,3 +147,4 @@ async function handleMsg(sock, msg) {
 }
 
 startBot();
+                                                  
