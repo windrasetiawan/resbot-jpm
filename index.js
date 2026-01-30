@@ -17,6 +17,7 @@ import { ChangeStatus, isOwner } from "./lib/utils.js";
 import { addGroupLinks } from "./lib/grupLinkStore.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
+// --- IMPORT PLUGIN ---
 import groupFeatures, { runGroupSchedule } from "./plugins/group_features.js"; 
 import admin from "./plugins/admin.js"; 
 import ping from "./plugins/ping.js";
@@ -31,6 +32,7 @@ import tiktok from "./plugins/tiktok.js";
 import owner from "./plugins/owner.js";
 import igdl from "./plugins/igdl.js";
 import serverMonitor, { startMonitor } from "./plugins/server_monitor.js";
+import autoreply from "./plugins/autoreply.js"; // Import Autoreply
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -87,7 +89,6 @@ async function startBot() {
         } else if (connection === "open") {
             console.log(clc.green("TERHUBUNG!"));
             
-            // --- UPDATE GLOBAL SOCKET ---
             global.sock = sock; 
             
             ChangeStatus(__dirname + "/sessions/", "connected");
@@ -117,6 +118,7 @@ async function handleMsg(sock, msg) {
         let db = {};
         try { db = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
 
+        // --- FITUR AUTO JOIN ---
         if (db.autojoin && (text.includes("chat.whatsapp.com") || text.includes("wa.me"))) {
             const codeMatch = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
             
@@ -124,9 +126,6 @@ async function handleMsg(sock, msg) {
                 const inviteCode = codeMatch[1];
                 try {
                     const groupInfo = await sock.groupGetInviteInfo(inviteCode);
-                    
-                    // --- UPDATE LOGIKA: UBAH KE HURUF KECIL SEMUA ---
-                    // Dengan begini: "VPN", "vpn", "Config", "CONFIG" semuanya akan terdeteksi.
                     const groupName = groupInfo.subject ? groupInfo.subject.toLowerCase() : "";
 
                     if (groupName.includes("vpn") || groupName.includes("config")) {
@@ -141,8 +140,16 @@ async function handleMsg(sock, msg) {
             }
         }
 
+        // Fitur Grup (Antilink dll) - Wajib jalan sebelum filter self
         await groupFeatures(sock, chatId, text, msg.key, msg);
 
+        // --- POSISI BARU: AUTOREPLY ---
+        // Ditaruh DISINI (sebelum filter self) agar tetap membalas chat orang asing
+        // meskipun bot sedang mode SELF.
+        await autoreply(sock, chatId, text, msg.key, msg); 
+        // ------------------------------
+
+        // Filter Mode Self (Hanya Owner yang bisa pakai fitur dibawah ini)
         if (db.mode === 'self' && !isOwner(sender)) return;
 
         await Promise.all([
@@ -159,6 +166,7 @@ async function handleMsg(sock, msg) {
             owner(sock, chatId, text, msg.key, msg),
             igdl(sock, chatId, text, msg.key, msg),
             serverMonitor(sock, chatId, text, msg.key, msg)
+            // autoreply sudah dipanggil di atas
         ]);
 
     } catch (e) {
