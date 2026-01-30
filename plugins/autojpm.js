@@ -1,5 +1,6 @@
-import { spintax, readWhitelist } from "../lib/utils.js";
-import { saveStatus } from "../lib/resumeAutoJPM.js";
+import { saveStatus, startJPMLoop } from "../lib/resumeAutoJPM.js";
+import { downloadAndSaveMedia } from "../lib/utils.js";
+import fs from "fs";
 
 async function autojpm(sock, chatId, text, key, msg) {
     if (!text.toLowerCase().startsWith(".autojpm")) return;
@@ -7,7 +8,6 @@ async function autojpm(sock, chatId, text, key, msg) {
     const cmd = args[1]?.toLowerCase();
     const val = args.slice(2).join(" ");
     
-    // Pastikan objek global ada
     global.autojpm = global.autojpm || {};
 
     // --- 1. SETTING JEDA ---
@@ -19,58 +19,38 @@ async function autojpm(sock, chatId, text, key, msg) {
     }
 
     // --- 2. AKTIFKAN (ON) ---
-    if (cmd === "on" && val) {
+    if (cmd === "on") {
         if (global.autojpmRunning) return sock.sendMessage(chatId, { text: "⚠️ Auto JPM sudah berjalan!" });
 
-        global.autojpmRunning = true;
-        saveStatus(true, val, null);
-        sock.sendMessage(chatId, { text: "🚀 AUTO JPM AKTIF" });
-        
-        // Loop Utama
-        while (global.autojpmRunning) {
-            const groups = await sock.groupFetchAllParticipating();
-            const whitelist = readWhitelist();
-            const targets = Object.values(groups).filter(g => !whitelist.includes(g.id));
-            
-            let successCount = 0; // Reset hitungan per putaran
-
-            // Loop Pengiriman ke Grup
-            for (const g of targets) {
-                if (!global.autojpmRunning) break;
-                
-                try {
-                    await sock.sendMessage(g.id, { text: spintax(val) });
-                    successCount++; // Tambah hitungan jika sukses
-                } catch (e) {
-                    // Gagal kirim (skip)
-                }
-
-                // Delay pendek antar pesan (20-30 detik)
-                await new Promise(r => setTimeout(r, 20000 + Math.floor(Math.random() * 10000)));
+        // Cek apakah user mengirim gambar
+        let imageBase64 = null;
+        if (msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage) {
+            try {
+                const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
+                const pathImg = await downloadAndSaveMedia(sock, { message: quotedMsg }, "jpm_temp.jpg");
+                const buffer = fs.readFileSync(pathImg);
+                imageBase64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+                fs.unlinkSync(pathImg); // Hapus file temp
+            } catch (e) {
+                console.error("Gagal load gambar JPM:", e);
             }
-            
-            if (!global.autojpmRunning) break;
-
-            // Hitung durasi istirahat untuk laporan
-            const hours = global.autojpm.loopDelayHours || 1;
-            const delayMs = hours * 3600000;
-            const delayMin = hours * 60;
-
-            // --- KIRIM LAPORAN KE OWNER ---
-            await sock.sendMessage(chatId, { 
-                text: `✅ *PUTARAN SELESAI*\n\n📂 Terkirim ke: ${successCount} grup\n😴 Bot istirahat selama: ${delayMin} menit...` 
-            });
-
-            // Bot Tidur Panjang
-            await new Promise(r => setTimeout(r, delayMs));
         }
+
+        global.autojpmRunning = true;
+        saveStatus(true, val || "Halo", imageBase64); 
+        
+        // JALANKAN ENGINE
+        startJPMLoop();
+        
+        // RESPON KE WHATSAPP ANDA (TETAP SAMA)
+        return sock.sendMessage(chatId, { text: "🚀 AUTO JPM AKTIF" });
     }
 
     // --- 3. MATIKAN (OFF) ---
     if (cmd === "off") {
         global.autojpmRunning = false;
         saveStatus(false, null, null);
-        sock.sendMessage(chatId, { text: "🛑 AUTO JPM MATI" });
+        return sock.sendMessage(chatId, { text: "🛑 AUTO JPM MATI" });
     }
 }
 export default autojpm;
