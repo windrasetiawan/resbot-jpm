@@ -118,27 +118,22 @@ async function handleMsg(sock, msg) {
         let db = {};
         try { db = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
 
-        // --- FITUR AUTO JOIN ---
-        if (db.autojoin && (text.includes("chat.whatsapp.com") || text.includes("wa.me"))) {
-            const codeMatch = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
-            
-            if (codeMatch && codeMatch[1]) {
-                const inviteCode = codeMatch[1];
-                try {
-                    const groupInfo = await sock.groupGetInviteInfo(inviteCode);
-                    const groupName = groupInfo.subject ? groupInfo.subject.toLowerCase() : "";
+// --- FITUR AUTO JOIN (UNIVERSAL) ---
+if (db.autojoin && text.includes("chat.whatsapp.com/")) {
+    const codeMatch = text.match(/chat\.whatsapp\.com\/([0-9A-Za-z]{20,29})/);
 
-                    if (groupName.includes("vpn") || groupName.includes("config")) {
-                        console.log(clc.green(`✅ Auto Join: ${groupInfo.subject}`));
-                        await sock.groupAcceptInvite(inviteCode);
-                    } else {
-                        console.log(clc.yellow(`⚠️ Skip Join: ${groupInfo.subject}`));
-                    }
-                } catch (e) {
-                    console.log("Link invite invalid atau bot sudah bergabung.");
-                }
-            }
+    if (codeMatch && codeMatch[1]) {
+        const inviteCode = codeMatch[1];
+        try {
+            const groupInfo = await sock.groupGetInviteInfo(inviteCode);
+            console.log(clc.green(`✅ Auto Join: ${groupInfo?.subject || "Unknown Group"}`));
+            await sock.groupAcceptInvite(inviteCode);
+        } catch (e) {
+            console.log(clc.yellow("⚠️ Gagal join: link invalid / sudah join / butuh approve admin / dibatasi."));
         }
+    }
+}
+
 
         // Fitur Grup (Antilink dll) - Wajib jalan sebelum filter self
         await groupFeatures(sock, chatId, text, msg.key, msg);
