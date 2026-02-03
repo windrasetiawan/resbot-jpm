@@ -13,7 +13,7 @@ async function groupFeatures(sock, chatId, text, key, msg) {
     const args = text.split(" ").slice(1);
     const isCreator = isOwner(sender);
 
-    // Cek Admin
+    // Cek Admin Grup
     let isAdmin = false;
     if (isGroup) {
         try {
@@ -23,7 +23,7 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         } catch {}
     }
     
-    // Admin Grup ATAU Owner Bot boleh akses
+    // Otorisasi: Admin Grup ATAU Owner Bot
     const isAuthorized = isAdmin || isCreator; 
 
     let db = { antilink: [], schedule: {}, autojoin: false };
@@ -31,7 +31,7 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         try { db = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
     }
 
-    // --- 1. PROTEKSI FITUR ADMIN ---
+    // --- 1. PROTEKSI FITUR ADMIN (Hanya di Grup) ---
     const adminCommands = [".antilink", ".setopen", ".setclose", ".cektime", ".deltime"];
     if (adminCommands.includes(cmd)) {
         if (!isGroup) return sock.sendMessage(chatId, { text: "⚠️ Hanya untuk grup!" });
@@ -39,39 +39,101 @@ async function groupFeatures(sock, chatId, text, key, msg) {
     }
     // --------------------------------
 
-    // 2. COMMAND OWNER (Out, Autojoin)
+    // 2. COMMAND OWNER (Autojoin Setting)
     if (cmd === ".autojoin" && isCreator) {
         if (args[0] === "on") { db.autojoin = true; } else if (args[0] === "off") { db.autojoin = false; }
         fs.writeFileSync(settingsPath, JSON.stringify(db, null, 2));
         return sock.sendMessage(chatId, { text: `✅ Auto Join ${args[0]}` });
     }
 
-    // LOGIKA MULTI OUT GRUP
+    // --- 3. LOGIKA MULTI OUT GRUP (YANG TADI HILANG) ---
     if (outSession[sender] && isCreator) {
+        // Cek Batal
         if (text.toLowerCase() === "batal" || text.toLowerCase() === "cancel") {
             delete outSession[sender];
             return sock.sendMessage(chatId, { text: "❌ Proses Multi-Out dibatalkan." });
         }
-        // ... (Logika multi-out lainnya disederhanakan agar muat, paste logika lama jika mau)
-        // Intinya kode proteksi sudah di atas.
-    }
 
-    // COMMAND OUT (Owner)
+        const groups = outSession[sender];
+        const input = text.trim();
+        let indexes = [];
+
+        // Logika Parse Input (All atau Nomor)
+        if (input.toLowerCase() === "all") {
+            indexes = groups.map((_, i) => i);
+        } else {
+            const parts = input.split(',');
+            for (let part of parts) {
+                if (part.includes('-')) {
+                    const [start, end] = part.split('-').map(Number);
+                    if (!isNaN(start) && !isNaN(end)) {
+                        for (let i = start; i <= end; i++) indexes.push(i - 1);
+                    }
+                } else {
+                    const idx = parseInt(part) - 1;
+                    if (!isNaN(idx)) indexes.push(idx);
+                }
+            }
+        }
+
+        // Filter index valid
+        indexes = [...new Set(indexes)].filter(i => i >= 0 && i < groups.length);
+
+        if (indexes.length === 0) {
+            return sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor yang valid! (Contoh: 1, 2, 5 atau all)" });
+        }
+
+        await sock.sendMessage(chatId, { text: `⏳ Keluar dari ${indexes.length} grup...` });
+
+        // Eksekusi Keluar
+        for (let i of indexes) {
+            const targetGroup = groups[i];
+            try {
+                // Hapus Chat dulu
+                await sock.chatModify({ 
+                    delete: true, 
+                    lastMessages: [{ key: msg.key, messageTimestamp: msg.messageTimestamp }] 
+                }, targetGroup.id).catch(() => {});
+                
+                // Leave
+                await sock.groupLeave(targetGroup.id);
+                await new Promise(r => setTimeout(r, 2000)); // Jeda 2 detik
+            } catch (e) {
+                console.log(`Gagal keluar ${targetGroup.subject}`);
+            }
+        }
+
+        delete outSession[sender];
+        return sock.sendMessage(chatId, { text: `✅ Selesai keluar dari ${indexes.length} grup.` });
+    }
+    // ---------------------------------------------------
+
+    // 4. COMMAND OUT / LEAVE (Owner)
     if ((cmd === ".out" || cmd === ".leave") && isCreator) {
         if (isGroup) {
+            // Out Single (Di dalam grup)
             try { await sock.chatModify({ delete: true, lastMessages: [{ key: msg.key, messageTimestamp: msg.messageTimestamp }] }, chatId); } catch {}
             await sock.groupLeave(chatId);
             return;
         } else {
-            // Logika list group out manual...
-             const groupListObj = await sock.groupFetchAllParticipating();
-             const groups = Object.values(groupListObj);
-             outSession[sender] = groups;
-             return sock.sendMessage(chatId, { text: "Ketikan nomor grup untuk keluar." });
+            // Out Multi (Di Private Chat) -> Memicu Logic No. 3
+            const groupListObj = await sock.groupFetchAllParticipating();
+            const groups = Object.values(groupListObj);
+            
+            if (groups.length === 0) return sock.sendMessage(chatId, { text: "Bot tidak ada di grup manapun." });
+
+            outSession[sender] = groups;
+            
+            let txt = "📊 *DAFTAR GRUP BOT*\n\n";
+            groups.forEach((g, i) => {
+                txt += `${i + 1}. ${g.subject}\n`;
+            });
+            txt += "\n👉 Ketik nomor (misal: `1,3` atau `all`) untuk keluar.";
+            return sock.sendMessage(chatId, { text: txt });
         }
     }
 
-    // 3. JADWAL GRUP (Admin)
+    // 5. JADWAL GRUP (Admin)
     if ((cmd === ".setopen" || cmd === ".setclose") && isAuthorized) {
         const time = args[0]; 
         if (!/^\d{2}:\d{2}$/.test(time)) return sock.sendMessage(chatId, { text: "Format: 08:00" });
@@ -91,7 +153,7 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: `Jadwal:\nOpen: ${s?.open||"-"}\nClose: ${s?.close||"-"}` });
     }
 
-    // 4. SETTINGS (.antilink)
+    // 6. SETTINGS (.antilink)
     if (cmd === ".antilink" && isAuthorized) {
         if (args[0] === "on") {
             if (!db.antilink.includes(chatId)) db.antilink.push(chatId);
@@ -105,17 +167,17 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // 5. MONITOR ANTILINK (Umum)
+    // 7. MONITOR ANTILINK (Umum)
     if (isGroup && db.antilink.includes(chatId) && !isCreator && !isAdmin) {
          const containsLink = text.includes("chat.whatsapp.com") || text.includes("wa.me") || text.includes("http");
          if (containsLink) {
-             // ... Logika antilink counter ...
              await sock.sendMessage(chatId, { delete: key });
+             // Tambahkan notifikasi jika perlu
          }
     }
 }
 
-// --- CRON JOB (RESPON ASLI DIJAGA) ---
+// --- CRON JOB (RESPON ASLI TETAP DIJAGA) ---
 export async function runGroupSchedule(sock) {
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Jakarta' });
 
