@@ -1,23 +1,43 @@
-import { spintax } from "../lib/utils.js";
+import { isOwner } from "../lib/utils.js";
 
-async function pushkontak(sock, sender, message, key, msg) {
-    if (!message.startsWith(".pushkontak")) return;
-    const text = message.split(" ").slice(1).join(" ");
-    if (!text) return sock.sendMessage(sender, { text: "⚠️ Masukkan pesan!" });
+async function pushkontak(sock, sender, text, key, msg) {
+    if (!text.toLowerCase().startsWith(".pushkontak")) return;
 
-    const metadata = await sock.groupMetadata(key.remoteJid);
-    const members = metadata.participants.map(p => p.id);
-    await sock.sendMessage(sender, { text: `🚀 Push ke ${members.length} kontak...` });
+    // --- PROTEKSI: HANYA OWNER ---
+    if (!isOwner(sender)) return sock.sendMessage(sender, { text: "⚠️ Fitur ini khusus Owner Bot!" }, { quoted: msg });
+    // -----------------------------
 
-    for (const jid of members) {
-        if (jid.includes(sock.user.id.split(':')[0]) || jid === sender) continue;
-        try {
-            const finalMsg = spintax(text);
-            await sock.sendMessage(jid, { text: finalMsg });
-            const delay = 20000 + Math.floor(Math.random() * 10000); // 20-30 detik
-            await new Promise(r => setTimeout(r, delay));
-        } catch {}
+    const args = text.split(" ");
+    const pesan = args.slice(1).join(" ");
+    
+    if (!pesan) return sock.sendMessage(sender, { text: "⚠️ Format salah. Gunakan: .pushkontak Halo kak promo nih" });
+
+    // Cek apakah di dalam grup
+    const chatId = msg.key.remoteJid;
+    if (!chatId.endsWith('@g.us')) return sock.sendMessage(sender, { text: "⚠️ Gunakan fitur ini di dalam grup!" });
+
+    try {
+        const metadata = await sock.groupMetadata(chatId);
+        const participants = metadata.participants;
+        
+        await sock.sendMessage(sender, { text: `🚀 Memulai Push Kontak ke ${participants.length} member...` });
+
+        for (let member of participants) {
+            if (member.id === sock.user.id) continue; // Skip bot sendiri
+
+            try {
+                await sock.sendMessage(member.id, { text: pesan });
+                // Jeda 3-5 detik
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            } catch (e) {
+                console.log(`Gagal kirim ke ${member.id}`);
+            }
+        }
+        await sock.sendMessage(sender, { text: "✅ Push Kontak Selesai!" });
+
+    } catch (e) {
+        console.error(e);
+        await sock.sendMessage(sender, { text: "❌ Gagal mengambil data grup." });
     }
-    await sock.sendMessage(sender, { text: `✅ Selesai.` });
 }
 export default pushkontak;
