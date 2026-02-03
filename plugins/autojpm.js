@@ -14,35 +14,30 @@ function getCurrentStatus() {
 
 async function autojpm(sock, chatId, text, key, msg) {
     if (!text.toLowerCase().startsWith(".autojpm")) return;
-
     const sender = msg.key.participant || msg.key.remoteJid;
 
     // --- PROTEKSI: HANYA OWNER ---
     if (!isOwner(sender)) return sock.sendMessage(chatId, { text: "⚠️ Fitur ini khusus Owner Bot!" }, { quoted: msg });
-    // -----------------------------
 
     const args = text.split(" ");
     const cmd = args[1]?.toLowerCase();
     const val = args.slice(2).join(" ");
     
-    // --- 1. SETTING WAKTU (FIX) ---
+    // --- 1. SETTING JEDA (FIX MENIT) ---
     if (cmd === "set") {
-        // Pakai parseInt lalu validasi
-        const min = parseInt(val); 
+        const min = parseInt(val);
+        if (isNaN(min) || min < 1) return sock.sendMessage(chatId, { text: "⚠️ Masukkan angka menit! Contoh: .autojpm set 2000" });
         
-        if (isNaN(min) || min < 1) return sock.sendMessage(chatId, { text: "⚠️ Masukkan angka menit yang valid! Contoh: .autojpm set 2000" });
-        
-        // Simpan langsung ke file agar permanen
+        // Simpan langsung menitnya ke database
         const current = getCurrentStatus();
         saveStatus(
             current.running || false, 
             current.text || "", 
             current.imageBase64 || null, 
             current.lastIndex || 0,
-            min // <--- SIMPAN NILAI MENIT MURNI
+            min // Simpan Menit Murni
         );
-
-        return sock.sendMessage(chatId, { text: `✅ Waktu Istirahat diatur: ${min} Menit.\n(Bot akan istirahat selama ${min} menit setelah satu putaran).` });
+        return sock.sendMessage(chatId, { text: `✅ Jeda Istirahat diatur: ${min} menit.\n(Bot akan istirahat ${min} menit setiap selesai satu putaran).` });
     }
 
     // --- 2. AKTIFKAN (ON) ---
@@ -60,27 +55,22 @@ async function autojpm(sock, chatId, text, key, msg) {
             } catch (e) {}
         }
 
-        // BACA DATABASE UNTUK DELAY
         const current = getCurrentStatus();
-        const delayToUse = current.delayMinutes || 60; // Default 60 jika belum diset
+        const delayToUse = current.delayMinutes || 60; 
 
         global.autojpmRunning = true;
         saveStatus(true, val || "Halo", imageBase64, 0, delayToUse); 
         
         startJPMLoop(sock);
         
-        return sock.sendMessage(chatId, { 
-            text: `🚀 *AUTO JPM AKTIF*\n\n⏱️ Istirahat: ${delayToUse} Menit\n💬 Pesan: ${val || "Default"}` 
-        });
+        return sock.sendMessage(chatId, { text: `🚀 AUTO JPM AKTIF\n⏱️ Istirahat: ${delayToUse} menit.` });
     }
 
     // --- 3. MATIKAN (OFF) ---
     if (cmd === "off") {
         global.autojpmRunning = false;
         const current = getCurrentStatus();
-        // Simpan running=false, tapi pertahankan delayMinutes
         saveStatus(false, null, null, 0, current.delayMinutes || 60);
-
         return sock.sendMessage(chatId, { text: "🛑 AUTO JPM MATI" });
     }
 }
