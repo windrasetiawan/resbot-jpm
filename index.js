@@ -118,31 +118,33 @@ async function handleMsg(sock, msg) {
         let db = {};
         try { db = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
 
-// --- FITUR AUTO JOIN (UNIVERSAL) ---
-if (db.autojoin && text.includes("chat.whatsapp.com/")) {
-    const codeMatch = text.match(/chat\.whatsapp\.com\/([0-9A-Za-z]{20,29})/);
+        // --- FITUR AUTO JOIN (UNIVERSAL) ---
+        // Masuk ke grup apapun jika ada link, tanpa filter nama config/vpn
+        if (db.autojoin && (text.includes("chat.whatsapp.com/") || text.includes("wa.me/"))) {
+            const codeMatch = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
 
-    if (codeMatch && codeMatch[1]) {
-        const inviteCode = codeMatch[1];
-        try {
-            const groupInfo = await sock.groupGetInviteInfo(inviteCode);
-            console.log(clc.green(`✅ Auto Join: ${groupInfo?.subject || "Unknown Group"}`));
-            await sock.groupAcceptInvite(inviteCode);
-        } catch (e) {
-            console.log(clc.yellow("⚠️ Gagal join: link invalid / sudah join / butuh approve admin / dibatasi."));
+            if (codeMatch && codeMatch[1]) {
+                const inviteCode = codeMatch[1];
+                try {
+                    // Coba ambil info grup dulu (untuk log)
+                    const groupInfo = await sock.groupGetInviteInfo(inviteCode);
+                    console.log(clc.green(`✅ Auto Join: ${groupInfo?.subject || "Grup Baru"}`));
+                    
+                    // Langsung gas join
+                    await sock.groupAcceptInvite(inviteCode);
+                } catch (e) {
+                    // Error wajar kalau link hangus atau bot sudah join
+                    // console.log(clc.yellow("⚠️ Skip join (Link invalid / sudah join / menunggu admin)."));
+                }
+            }
         }
-    }
-}
 
-
-        // Fitur Grup (Antilink dll) - Wajib jalan sebelum filter self
+        // Fitur Grup (Antilink dll)
         await groupFeatures(sock, chatId, text, msg.key, msg);
 
-        // --- POSISI BARU: AUTOREPLY ---
-        // Ditaruh DISINI (sebelum filter self) agar tetap membalas chat orang asing
-        // meskipun bot sedang mode SELF.
+        // --- AUTOREPLY (POSISI: SEBELUM FILTER SELF) ---
+        // Agar tetap membalas chat PC orang asing meski mode Self
         await autoreply(sock, chatId, text, msg.key, msg); 
-        // ------------------------------
 
         // Filter Mode Self (Hanya Owner yang bisa pakai fitur dibawah ini)
         if (db.mode === 'self' && !isOwner(sender)) return;
@@ -161,7 +163,6 @@ if (db.autojoin && text.includes("chat.whatsapp.com/")) {
             owner(sock, chatId, text, msg.key, msg),
             igdl(sock, chatId, text, msg.key, msg),
             serverMonitor(sock, chatId, text, msg.key, msg)
-            // autoreply sudah dipanggil di atas
         ]);
 
     } catch (e) {
