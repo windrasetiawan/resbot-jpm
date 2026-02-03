@@ -3,7 +3,7 @@ import path from "path";
 import { isOwner } from "../lib/utils.js";
 
 const settingsPath = path.join(process.cwd(), "DATABASE", "settings.json");
-const promoStore = {}; 
+const promoStore = {}; // Database sementara untuk hitung jumlah promosi harian
 const outSession = {};
 
 async function groupFeatures(sock, chatId, text, key, msg) {
@@ -46,7 +46,7 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: `✅ Auto Join ${args[0]}` });
     }
 
-    // --- 3. LOGIKA MULTI OUT GRUP (YANG TADI HILANG) ---
+    // --- 3. LOGIKA MULTI OUT GRUP (FIX) ---
     if (outSession[sender] && isCreator) {
         // Cek Batal
         if (text.toLowerCase() === "batal" || text.toLowerCase() === "cancel") {
@@ -83,9 +83,10 @@ async function groupFeatures(sock, chatId, text, key, msg) {
             return sock.sendMessage(chatId, { text: "⚠️ Masukkan nomor yang valid! (Contoh: 1, 2, 5 atau all)" });
         }
 
-        await sock.sendMessage(chatId, { text: `⏳ Keluar dari ${indexes.length} grup...` });
+        await sock.sendMessage(chatId, { text: `⏳ Memproses keluar dari ${indexes.length} grup...` });
 
         // Eksekusi Keluar
+        let successCount = 0;
         for (let i of indexes) {
             const targetGroup = groups[i];
             try {
@@ -97,16 +98,16 @@ async function groupFeatures(sock, chatId, text, key, msg) {
                 
                 // Leave
                 await sock.groupLeave(targetGroup.id);
-                await new Promise(r => setTimeout(r, 2000)); // Jeda 2 detik
+                successCount++;
+                await new Promise(r => setTimeout(r, 1500)); // Jeda 1.5 detik
             } catch (e) {
                 console.log(`Gagal keluar ${targetGroup.subject}`);
             }
         }
 
         delete outSession[sender];
-        return sock.sendMessage(chatId, { text: `✅ Selesai keluar dari ${indexes.length} grup.` });
+        return sock.sendMessage(chatId, { text: `✅ Selesai! Berhasil keluar dari ${successCount} grup.` });
     }
-    // ---------------------------------------------------
 
     // 4. COMMAND OUT / LEAVE (Owner)
     if ((cmd === ".out" || cmd === ".leave") && isCreator) {
@@ -145,12 +146,12 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         if (cmd === ".setclose") db.schedule[chatId].close = time;
         
         fs.writeFileSync(settingsPath, JSON.stringify(db, null, 2));
-        return sock.sendMessage(chatId, { text: `Jadwal diatur: ${time}` });
+        return sock.sendMessage(chatId, { text: `✅ Jadwal diatur: ${time} WIB` });
     }
 
     if (cmd === ".cektime" && isAuthorized) {
         const s = db.schedule?.[chatId];
-        return sock.sendMessage(chatId, { text: `Jadwal:\nOpen: ${s?.open||"-"}\nClose: ${s?.close||"-"}` });
+        return sock.sendMessage(chatId, { text: `📅 *Jadwal Grup Ini:*\n\n🔓 Buka: ${s?.open||"-"}\n🔒 Tutup: ${s?.close||"-"}` });
     }
 
     // 6. SETTINGS (.antilink)
@@ -158,31 +159,58 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         if (args[0] === "on") {
             if (!db.antilink.includes(chatId)) db.antilink.push(chatId);
             fs.writeFileSync(settingsPath, JSON.stringify(db, null, 2));
-            return sock.sendMessage(chatId, { text: "Antilink ON (Limit 2x/hari)" });
+            return sock.sendMessage(chatId, { 
+                text: "✅ *ANTILINK DIAKTIFKAN*\n\nSetiap member hanya boleh mengirim link promosi maksimal 2x sehari.\nPelanggaran ke-3 akan dihapus otomatis." 
+            });
         }
         if (args[0] === "off") {
             db.antilink = db.antilink.filter(id => id !== chatId);
             fs.writeFileSync(settingsPath, JSON.stringify(db, null, 2));
-            return sock.sendMessage(chatId, { text: "Antilink OFF" });
+            return sock.sendMessage(chatId, { 
+                text: "✅ *ANTILINK DINONAKTIFKAN*\n\nSekarang member bebas mengirim link (tetap jaga etika spam ya)." 
+            });
         }
     }
 
-    // 7. MONITOR ANTILINK (Umum)
+    // 7. MONITOR ANTILINK (Counter 2x Warning, 3x Delete)
     if (isGroup && db.antilink.includes(chatId) && !isCreator && !isAdmin) {
          const containsLink = text.includes("chat.whatsapp.com") || text.includes("wa.me") || text.includes("http");
+         
          if (containsLink) {
-             await sock.sendMessage(chatId, { delete: key });
-             // Tambahkan notifikasi jika perlu
+             const today = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
+             const userKey = `${chatId}-${sender}`; // Kunci unik per user per grup
+
+             // Reset jika hari berganti (backup jika cronjob telat)
+             if (!promoStore[userKey] || promoStore[userKey].date !== today) {
+                 promoStore[userKey] = { count: 0, date: today };
+             }
+
+             // Tambah hitungan
+             promoStore[userKey].count++;
+
+             // Jika sudah lebih dari 2x (artinya ini ke-3 atau lebih)
+             if (promoStore[userKey].count > 2) {
+                 // Hapus Pesan
+                 await sock.sendMessage(chatId, { delete: key });
+                 
+                 // Kirim Pesan Peringatan (Tag User)
+                 await sock.sendMessage(chatId, { 
+                     text: `⚠️ @${sender.split('@')[0]} PROMOSI MAX 2X AJA BOS, KALAU MAU PROMOSI LAGI BESOK LAGI YAH....`,
+                     mentions: [sender]
+                 });
+             }
          }
     }
 }
 
-// --- CRON JOB (RESPON ASLI TETAP DIJAGA) ---
+// --- CRON JOB (Jadwal & Reset Antilink) ---
 export async function runGroupSchedule(sock) {
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Jakarta' });
 
+    // Reset Counter Antilink Jam 00:00
     if (now === "00:00") {
         for (const key in promoStore) delete promoStore[key];
+        console.log("[SYSTEM] Promo Counter Reset.");
     }
 
     if (!fs.existsSync(settingsPath)) return;
