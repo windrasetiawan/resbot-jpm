@@ -32,7 +32,7 @@ import tiktok from "./plugins/tiktok.js";
 import owner from "./plugins/owner.js";
 import igdl from "./plugins/igdl.js";
 import serverMonitor, { startMonitor } from "./plugins/server_monitor.js";
-import autoreply from "./plugins/autoreply.js"; // Import Autoreply
+import autoreply from "./plugins/autoreply.js"; 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -103,7 +103,8 @@ async function startBot() {
 
     sock.ev.on("messages.upsert", async ({ messages }) => {
         const msg = messages[0];
-        if (!msg.message || msg.key.fromMe) return;
+        // PERBAIKAN: Hapus '|| msg.key.fromMe' agar Owner bisa pakai bot sendiri
+        if (!msg.message) return; 
         await handleMsg(sock, msg);
     });
 }
@@ -119,34 +120,26 @@ async function handleMsg(sock, msg) {
         try { db = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
 
         // --- FITUR AUTO JOIN (UNIVERSAL) ---
-        // Masuk ke grup apapun jika ada link, tanpa filter nama config/vpn
         if (db.autojoin && (text.includes("chat.whatsapp.com/") || text.includes("wa.me/"))) {
             const codeMatch = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
-
-            if (codeMatch && codeMatch[1]) {
+            // Cegah bot join link yang dikirim dirinya sendiri (looping)
+            if (codeMatch && codeMatch[1] && !msg.key.fromMe) {
                 const inviteCode = codeMatch[1];
                 try {
-                    // Coba ambil info grup dulu (untuk log)
                     const groupInfo = await sock.groupGetInviteInfo(inviteCode);
                     console.log(clc.green(`✅ Auto Join: ${groupInfo?.subject || "Grup Baru"}`));
-                    
-                    // Langsung gas join
                     await sock.groupAcceptInvite(inviteCode);
-                } catch (e) {
-                    // Error wajar kalau link hangus atau bot sudah join
-                    // console.log(clc.yellow("⚠️ Skip join (Link invalid / sudah join / menunggu admin)."));
-                }
+                } catch (e) {}
             }
         }
 
-        // Fitur Grup (Antilink dll)
+        // Fitur Grup
         await groupFeatures(sock, chatId, text, msg.key, msg);
 
-        // --- AUTOREPLY (POSISI: SEBELUM FILTER SELF) ---
-        // Agar tetap membalas chat PC orang asing meski mode Self
+        // Autoreply (Penting: Plugin autoreply sudah punya filter 'fromMe' sendiri, jadi aman)
         await autoreply(sock, chatId, text, msg.key, msg); 
 
-        // Filter Mode Self (Hanya Owner yang bisa pakai fitur dibawah ini)
+        // Filter Mode Self
         if (db.mode === 'self' && !isOwner(sender)) return;
 
         await Promise.all([
