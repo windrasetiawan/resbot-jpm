@@ -8,7 +8,7 @@ async function autoreply(sock, chatId, text, key, msg) {
     if (key.fromMe) return;
 
     // 3. Daftar Kata Kunci (Keyword)
-    const keywords = ["p", "bang", "min", "halo", "hallo", "admin", "assalamualaikum"];
+    const keywords = ["p", "bang", "min", "beli", "mas", "udp", "config", "halo", "hallo", "admin", "assalamualaikum"];
     const incomingText = text.toLowerCase().trim();
 
     // 4. Cek Apakah Pesan Sesuai Keyword
@@ -17,7 +17,7 @@ async function autoreply(sock, chatId, text, key, msg) {
         // Ambil nomor owner pertama dari config.js
         const ownerNo = numberAllowed[0]; 
         
-        const replyMsg = `👋 Halo kak!\n\nMohon maaf ini Bot Otomatis.\nJika ada keperluan penting, silakan hubungi Owner saya langsung:\n\n👤 *Owner*\n➡️ wa.me/${ownerNo}\n\n_Terima kasih!_`;
+        const replyMsg = `👋 Halo kak!\n\nMohon maaf nomor ini hanya untuk promosi.\nJika ada keperluan penting, silakan hubungi Owner saya langsung:\n\n👤 *Owner*\n➡️ wa.me/${ownerNo}\n\n_Terima kasih!_`;
 
         try {
             await sock.sendMessage(chatId, { text: replyMsg }, { quoted: msg });
