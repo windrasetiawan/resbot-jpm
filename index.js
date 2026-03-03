@@ -32,7 +32,8 @@ import tiktok from "./plugins/tiktok.js";
 import owner from "./plugins/owner.js";
 import igdl from "./plugins/igdl.js";
 import serverMonitor, { startMonitor } from "./plugins/server_monitor.js";
-import autoreply from "./plugins/autoreply.js"; // Import Autoreply
+import autoreply from "./plugins/autoreply.js"; 
+import autowd, { startAutoWD } from "./plugins/autowd.js"; // <--- HANYA AUTO WD
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -96,6 +97,9 @@ async function startBot() {
             
             setInterval(() => { runGroupSchedule(sock); }, 60000);
             startMonitor(sock);
+            
+            // --- JALANKAN MONITOR AUTO WD ---
+            startAutoWD(sock); 
         }
     });
 
@@ -103,7 +107,7 @@ async function startBot() {
 
     sock.ev.on("messages.upsert", async ({ messages }) => {
         const msg = messages[0];
-        if (!msg.message || msg.key.fromMe) return;
+        if (!msg.message) return; // Fix Owner bisa pakai bot
         await handleMsg(sock, msg);
     });
 }
@@ -119,36 +123,28 @@ async function handleMsg(sock, msg) {
         try { db = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
 
         // --- FITUR AUTO JOIN (UNIVERSAL) ---
-        // Masuk ke grup apapun jika ada link, tanpa filter nama config/vpn
         if (db.autojoin && (text.includes("chat.whatsapp.com/") || text.includes("wa.me/"))) {
             const codeMatch = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
-
-            if (codeMatch && codeMatch[1]) {
+            if (codeMatch && codeMatch[1] && !msg.key.fromMe) {
                 const inviteCode = codeMatch[1];
                 try {
-                    // Coba ambil info grup dulu (untuk log)
                     const groupInfo = await sock.groupGetInviteInfo(inviteCode);
                     console.log(clc.green(`✅ Auto Join: ${groupInfo?.subject || "Grup Baru"}`));
-                    
-                    // Langsung gas join
                     await sock.groupAcceptInvite(inviteCode);
-                } catch (e) {
-                    // Error wajar kalau link hangus atau bot sudah join
-                    // console.log(clc.yellow("⚠️ Skip join (Link invalid / sudah join / menunggu admin)."));
-                }
+                } catch (e) {}
             }
         }
 
-        // Fitur Grup (Antilink dll)
+        // Plugin Grup
         await groupFeatures(sock, chatId, text, msg.key, msg);
 
-        // --- AUTOREPLY (POSISI: SEBELUM FILTER SELF) ---
-        // Agar tetap membalas chat PC orang asing meski mode Self
+        // Autoreply
         await autoreply(sock, chatId, text, msg.key, msg); 
 
-        // Filter Mode Self (Hanya Owner yang bisa pakai fitur dibawah ini)
+        // Filter Mode Self
         if (db.mode === 'self' && !isOwner(sender)) return;
 
+        // --- PEMANGGILAN PLUGIN ---
         await Promise.all([
             ping(sock, chatId, text, msg.key, msg),
             menu(sock, chatId, text, msg.key, msg),
@@ -162,7 +158,8 @@ async function handleMsg(sock, msg) {
             tiktok(sock, chatId, text, msg.key, msg),
             owner(sock, chatId, text, msg.key, msg),
             igdl(sock, chatId, text, msg.key, msg),
-            serverMonitor(sock, chatId, text, msg.key, msg)
+            serverMonitor(sock, chatId, text, msg.key, msg),
+            autowd(sock, chatId, text, msg.key, msg) // <--- Command .autowd
         ]);
 
     } catch (e) {
