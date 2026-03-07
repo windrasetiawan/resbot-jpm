@@ -26,28 +26,15 @@ async function autojpm(sock, chatId, text, key, msg) {
     const cmd = args[1]?.toLowerCase();
     const val = args.slice(2).join(" ");
     
-    // --- 1. SETTING JEDA ---
     if (cmd === "set") {
         const min = parseInt(val);
         if (isNaN(min) || min < 1) return sock.sendMessage(chatId, { text: `⚠️ Masukkan angka menit yang valid!\nContoh: .autojpm set 180` });
         
         const current = getCurrentStatus() || {};
-        
-        // Simpan tanpa me-reset timer istirahat yang sedang berjalan
-        saveStatus(
-            current.running || false, 
-            current.text || "", 
-            current.imageBase64 || null, 
-            current.lastIndex || 0,
-            min, 
-            current.senderJid || sender,
-            null
-        );
-        
+        saveStatus(current.running || false, current.text || "", current.imageBase64 || null, current.lastIndex || 0, min, current.senderJid || sender, null);
         return sock.sendMessage(chatId, { text: `✅ Jeda Istirahat BERHASIL diubah menjadi: ${min} menit.` });
     }
 
-    // --- 2. AKTIFKAN (ON) ---
     if (cmd === "on") {
         if (global.autojpmRunning) return sock.sendMessage(chatId, { text: `⚠️ Auto JPM sudah berjalan!` });
 
@@ -66,32 +53,21 @@ async function autojpm(sock, chatId, text, key, msg) {
 
         const current = getCurrentStatus() || {};
         let delayToUse = 60;
-        if (current.delayMinutes && !isNaN(current.delayMinutes) && current.delayMinutes > 0) {
-            delayToUse = current.delayMinutes;
-        }
+        if (current.delayMinutes && !isNaN(current.delayMinutes) && current.delayMinutes > 0) delayToUse = current.delayMinutes;
 
         let messageText = val;
-        if (!messageText) {
-            messageText = current.text || `*READY STOCK* 🚀\n\nMenyediakan berbagai kebutuhan internet murah & ngebut.\n\n👇 *KLIK GAMBAR DI ATAS UNTUK ORDER* 👇`;
-        }
+        if (!messageText) messageText = current.text || `*READY STOCK* 🚀\n\nMenyediakan berbagai kebutuhan internet murah & ngebut.\n\n👇 *KLIK GAMBAR DI ATAS UNTUK ORDER* 👇`;
 
         global.autojpmRunning = true;
-        
-        // Angka "0" di akhir sangat penting: Ini akan MEMBATALKAN istirahat sebelumnya (Reset)
         saveStatus(true, messageText, imageBase64, 0, delayToUse, sender, 0); 
-        
         startJPMLoop(sock);
         
-        return sock.sendMessage(chatId, { 
-            text: `🚀 *AUTO JPM AKTIF*\n\n📝 Teks: Siap dikirim\n⏱️ Istirahat: ${delayToUse} menit.\n\n_(Timer Anti-Restart aktif)_` 
-        });
+        return sock.sendMessage(chatId, { text: `🚀 *AUTO JPM AKTIF*\n\n📝 Teks: Siap dikirim\n⏱️ Istirahat: ${delayToUse} menit.\n\n_(Timer Anti-Restart aktif)_` });
     }
 
-    // --- 3. MATIKAN (OFF) ---
     if (cmd === "off") {
         global.autojpmRunning = false;
         const current = getCurrentStatus() || {};
-        // Reset timer saat dimatikan dengan "0"
         saveStatus(false, current.text, current.imageBase64, 0, current.delayMinutes || 60, current.senderJid, 0);
         return sock.sendMessage(chatId, { text: `🛑 AUTO JPM MATI` });
     }
