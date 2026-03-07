@@ -17,7 +17,6 @@ import { ChangeStatus, isOwner } from "./lib/utils.js";
 import { addGroupLinks } from "./lib/grupLinkStore.js"; 
 import resumeAutoJPM from "./lib/resumeAutoJPM.js";
 
-// --- IMPORT PLUGIN ---
 import groupFeatures, { runGroupSchedule } from "./plugins/group_features.js"; 
 import admin from "./plugins/admin.js"; 
 import ping from "./plugins/ping.js";
@@ -33,7 +32,7 @@ import owner from "./plugins/owner.js";
 import igdl from "./plugins/igdl.js";
 import serverMonitor, { startMonitor } from "./plugins/server_monitor.js";
 import autoreply from "./plugins/autoreply.js"; 
-import autowd, { startAutoWD } from "./plugins/autowd.js"; // <--- HANYA AUTO WD
+import autowd, { startAutoWD } from "./plugins/autowd.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -97,8 +96,6 @@ async function startBot() {
             
             setInterval(() => { runGroupSchedule(sock); }, 60000);
             startMonitor(sock);
-            
-            // --- JALANKAN MONITOR AUTO WD ---
             startAutoWD(sock); 
         }
     });
@@ -107,7 +104,7 @@ async function startBot() {
 
     sock.ev.on("messages.upsert", async ({ messages }) => {
         const msg = messages[0];
-        if (!msg.message) return; // Fix Owner bisa pakai bot
+        if (!msg.message) return; 
         await handleMsg(sock, msg);
     });
 }
@@ -122,7 +119,6 @@ async function handleMsg(sock, msg) {
         let db = {};
         try { db = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
 
-        // --- FITUR AUTO JOIN (UNIVERSAL) ---
         if (db.autojoin && (text.includes("chat.whatsapp.com/") || text.includes("wa.me/"))) {
             const codeMatch = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
             if (codeMatch && codeMatch[1] && !msg.key.fromMe) {
@@ -135,16 +131,11 @@ async function handleMsg(sock, msg) {
             }
         }
 
-        // Plugin Grup
         await groupFeatures(sock, chatId, text, msg.key, msg);
-
-        // Autoreply
         await autoreply(sock, chatId, text, msg.key, msg); 
 
-        // Filter Mode Self
         if (db.mode === 'self' && !isOwner(sender)) return;
 
-        // --- PEMANGGILAN PLUGIN ---
         await Promise.all([
             ping(sock, chatId, text, msg.key, msg),
             menu(sock, chatId, text, msg.key, msg),
@@ -159,7 +150,7 @@ async function handleMsg(sock, msg) {
             owner(sock, chatId, text, msg.key, msg),
             igdl(sock, chatId, text, msg.key, msg),
             serverMonitor(sock, chatId, text, msg.key, msg),
-            autowd(sock, chatId, text, msg.key, msg) // <--- Command .autowd
+            autowd(sock, chatId, text, msg.key, msg) 
         ]);
 
     } catch (e) {
