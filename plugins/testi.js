@@ -25,6 +25,9 @@ function saveTestiCount(count) {
 }
 
 export default async function testi(sock, chatId, text, key, msg) {
+    // FIX PENTING: Jangan biarkan bot merespon pesannya sendiri!
+    if (msg.key.fromMe) return;
+
     const sender = msg.key.participant || msg.key.remoteJid;
     
     // Fitur ini khusus Owner
