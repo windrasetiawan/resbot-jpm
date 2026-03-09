@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { isOwner, downloadAndSaveMedia } from "../lib/utils.js";
 
-const ID_SALURAN_TESTI = "120363400495653784@newsletter"; 
+const ID_SALURAN_TESTI = "120363405429396163@newsletter"; 
 const countPath = path.join(process.cwd(), "DATABASE", "testi_count.json");
 
 function getTestiCount() {
@@ -41,9 +41,9 @@ export default async function testi(sock, chatId, text, key, msg) {
         let finalCaption = "";
 
         if (cmd === ".testi") {
-            finalCaption = `PEMBELIAN BERHASIL  \n◇━━━━━━━━━━━━━━━━━◇ \nISP : ${data[0] || ""}\nProtokol : ${data[1] || ""}\nProduk : ${data[2] || "-"}\nRegion : ${data[3] || ""}\nConfig : ${data[4] || ""}\nDevice : ${data[5] || ""}\nHarga : Rp ${data[6] || ""}\nDurasi : ${data[7] || ""}\n\n◇━━━━━━━━━━━━━━━━━◇ \nTRANSAKSI SUKSES (${currentCount}) \nGrup Sharing Config  \nhttps://chat.whatsapp.com/IRaOCbFdgaO6Rmx0tsgyyb?mode=ems_copy_t \nKontak Admin \nwa.me/6285921645742\n\n*BOT VPN ➙* t.me/wintunelingvpnbot\n*BOT ZIVPN ➙* t.me/wintunelingzivpnBot\n◇━━━━━━━━━━━━━━━━━◇ \nTerima kasih telah bertransaksi di WINTUNELING VPN`;
+            finalCaption = `✨PEMBELIAN BERHASIL✨  \n◇━━━━━━━━━━━━━━━━━◇ \n🗄️ ISP : ${data[0] || ""}\n🌐 Protokol : ${data[1] || ""}\n📦 Produk : ${data[2] || "-"}\n🌍 Region : ${data[3] || ""}\n⚡ Config : ${data[4] || ""}\n💻 Device : ${data[5] || ""}\n💰 Harga : Rp ${data[6] || ""}\n⏳ Durasi : ${data[7] || ""}\n\n◇━━━━━━━━━━━━━━━━━◇ \n✅ TRANSAKSI SUKSES (${currentCount}) \n📂 Grup Sharing Config  \nhttps://chat.whatsapp.com/IRaOCbFdgaO6Rmx0tsgyyb?mode=ems_copy_t \n📞 Kontak Admin \n👉 wa.me/6285921645742\n\n*BOT VPN ➙* t.me/wintunelingvpnbot\n*BOT ZIVPN ➙* t.me/wintunelingzivpnBot\n◇━━━━━━━━━━━━━━━━━◇ \n🚀 Terima kasih telah bertransaksi di ✨WINTUNELING VPN`;
         } else if (cmd === ".testi2") {
-            finalCaption = `PEMBELIAN BERHASIL  \n◇━━━━━━━━━━━━━━━━━◇ \nProduk : ${data[0] || ""}\nHarga : Rp ${data[1] || ""}\nMasa Aktif : ${data[2] || ""}\n\n◇━━━━━━━━━━━━━━━━━◇ \nTRANSAKSI SUKSES (${currentCount}) \nGrup Sharing Config  \nhttps://chat.whatsapp.com/IRaOCbFdgaO6Rmx0tsgyyb?mode=ems_copy_t \nKontak Admin \nwa.me/6285921645742\n\n*BOT VPN ➙* t.me/wintunelingvpnbot\n*BOT ZIVPN ➙* t.me/wintunelingzivpnBot\n*BOT KUOTA ➙* t.me/wintunelingkoutabot\n◇━━━━━━━━━━━━━━━━━◇ \nTerima kasih telah bertransaksi di WINTUNELING VPN`;
+            finalCaption = `✨PEMBELIAN BERHASIL✨  \n◇━━━━━━━━━━━━━━━━━◇ \n📦 Produk : ${data[0] || ""}\n💰 Harga : Rp ${data[1] || ""}\n⏳ Masa Aktif : ${data[2] || ""}\n\n◇━━━━━━━━━━━━━━━━━◇ \n✅ TRANSAKSI SUKSES (${currentCount}) \n📂 Grup Sharing Config  \nhttps://chat.whatsapp.com/IRaOCbFdgaO6Rmx0tsgyyb?mode=ems_copy_t \n📞 Kontak Admin \n👉 wa.me/6285921645742\n\n*BOT VPN ➙* t.me/wintunelingvpnbot\n*BOT ZIVPN ➙* t.me/wintunelingzivpnBot\n*BOT KUOTA ➙* t.me/wintunelingkoutabot\n◇━━━━━━━━━━━━━━━━━◇ \n🚀 Terima kasih telah bertransaksi di ✨WINTUNELING VPN✨`;
         }
 
         if (quotedMsg.imageMessage) {
