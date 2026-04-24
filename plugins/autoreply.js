@@ -1,6 +1,52 @@
 import { numberAllowed } from "../config.js";
+import { isOwner } from "../lib/utils.js";
+import fs from "fs";
+import path from "path";
+
+const statusPath = path.join(process.cwd(), "DATABASE", "autoreply_status.json");
+
+// Fungsi untuk mengecek status autoreply (Default: Nyala)
+function getAutoreplyStatus() {
+    try {
+        if (fs.existsSync(statusPath)) {
+            const raw = fs.readFileSync(statusPath);
+            return JSON.parse(raw).enabled;
+        }
+    } catch (e) {}
+    return true; 
+}
+
+// Fungsi untuk menyimpan status autoreply
+function setAutoreplyStatus(status) {
+    try {
+        if (!fs.existsSync(path.join(process.cwd(), "DATABASE"))) {
+            fs.mkdirSync(path.join(process.cwd(), "DATABASE"));
+        }
+        fs.writeFileSync(statusPath, JSON.stringify({ enabled: status }));
+    } catch (e) {}
+}
 
 async function autoreply(sock, chatId, text, key, msg) {
+    const sender = msg.key.participant || msg.key.remoteJid;
+    
+    // Command untuk On/Off Autoreply oleh Owner
+    if (text.toLowerCase().startsWith(".autoreply ")) {
+        if (!isOwner(sender)) return sock.sendMessage(chatId, { text: `⚠️ Fitur ini khusus Owner Bot!` }, { quoted: msg });
+        
+        const cmd = text.split(" ")[1]?.toLowerCase();
+        
+        if (cmd === "on") {
+            setAutoreplyStatus(true);
+            return sock.sendMessage(chatId, { text: "✅ Autoreply berhasil diaktifkan." });
+        } else if (cmd === "off") {
+            setAutoreplyStatus(false);
+            return sock.sendMessage(chatId, { text: "🛑 Autoreply berhasil dimatikan." });
+        }
+    }
+
+    // Jika autoreply sedang dalam status off, abaikan pesan selanjutnya
+    if (!getAutoreplyStatus()) return;
+
     // 1. Filter: Hanya di Private Chat (Bukan Grup)
     if (chatId.endsWith('@g.us')) return;
 
