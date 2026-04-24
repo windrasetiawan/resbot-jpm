@@ -59,7 +59,8 @@ async function autojpm(sock, chatId, text, key, msg) {
         if (!messageText) messageText = current.text || `*READY STOCK* 🚀\n\nMenyediakan berbagai kebutuhan internet murah & ngebut.\n\n👇 *KLIK GAMBAR DI ATAS UNTUK ORDER* 👇`;
 
         global.autojpmRunning = true;
-        saveStatus(true, messageText, imageBase64, 0, delayToUse, sender, 0); 
+        // Parameter sender diubah ke chatId agar laporan masuk ke grup tempat command dijalankan
+        saveStatus(true, messageText, imageBase64, 0, delayToUse, chatId, 0); 
         startJPMLoop(sock);
         
         return sock.sendMessage(chatId, { text: `🚀 *AUTO JPM AKTIF*\n\n📝 Teks: Siap dikirim\n⏱️ Istirahat: ${delayToUse} menit.\n\n_(Timer Anti-Restart aktif)_` });
@@ -68,7 +69,8 @@ async function autojpm(sock, chatId, text, key, msg) {
     if (cmd === "off") {
         global.autojpmRunning = false;
         const current = getCurrentStatus() || {};
-        saveStatus(false, current.text, current.imageBase64, 0, current.delayMinutes || 60, current.senderJid, 0);
+        // Parameter current.senderJid diubah ke chatId
+        saveStatus(false, current.text, current.imageBase64, 0, current.delayMinutes || 60, chatId, 0);
         return sock.sendMessage(chatId, { text: `🛑 AUTO JPM MATI` });
     }
 }
