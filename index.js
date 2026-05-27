@@ -119,16 +119,26 @@ async function handleMsg(sock, msg) {
         const isBotOwner = isOwner(sender) || msg.key.fromMe;
         if (db.mode === 'self' && !isBotOwner) return;
 
+        // --- BAGIAN AUTOJOIN YANG DIPERBAIKI ---
         if (db.autojoin && (text.includes("chat.whatsapp.com/") || text.includes("wa.me/"))) {
-            const codeMatch = text.match(/(?:chat\.whatsapp\.com\/|wa\.me\/)([0-9A-Za-z]{20,29})/);
+            const codeMatch = text.match(/(?:chat\.whatsapp\.com\/(?:invite\/)?|wa\.me\/(?:invite\/)?)([a-zA-Z0-9_-]{15,30})/);
             if (codeMatch && codeMatch[1] && !msg.key.fromMe) {
                 const inviteCode = codeMatch[1];
                 try {
                     await sleep(2000);
+                    // Coba join grup secara langsung
                     await sock.groupAcceptInvite(inviteCode);
-                } catch (e) {}
+                } catch (e) {
+                    // Jika grup membutuhkan persetujuan admin (request to join)
+                    try {
+                        if (sock.groupRequestParticipate) {
+                            await sock.groupRequestParticipate(inviteCode);
+                        }
+                    } catch (err) {}
+                }
             }
         }
+        // --- AKHIR BAGIAN AUTOJOIN YANG DIPERBAIKI ---
 
         if (text.startsWith(".")) {
             await sock.readMessages([msg.key]);
