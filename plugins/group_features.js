@@ -10,17 +10,22 @@ async function groupFeatures(sock, chatId, text, key, msg) {
     const sender = msg.key.participant || msg.key.remoteJid;
     const isGroup = chatId.endsWith('@g.us');
     
-    // Normalisasi perintah
     const rawText = text.trim();
-    if (!rawText.startsWith(".")) return; 
+    const isCommand = rawText.startsWith(".");
     
-    const cmdArgs = rawText.split(/\s+/); 
-    const cmd = cmdArgs[0].toLowerCase();
-    const action = cmdArgs[1] ? cmdArgs[1].toLowerCase() : null; 
-    const args = cmdArgs.slice(1);
+    let cmd = "";
+    let action = null;
+    let args = [];
+    
+    if (isCommand) {
+        const cmdArgs = rawText.split(/\s+/); 
+        cmd = cmdArgs[0].toLowerCase();
+        action = cmdArgs[1] ? cmdArgs[1].toLowerCase() : null; 
+        args = cmdArgs.slice(1);
+    }
+    
     const isCreator = isOwner(sender);
 
-    // Cek Hak Akses Admin
     let isAdmin = false;
     if (isGroup) {
         try {
@@ -32,7 +37,6 @@ async function groupFeatures(sock, chatId, text, key, msg) {
     
     const isAuthorized = isAdmin || isCreator; 
 
-    // Load Database Settings
     let db = { antilink: [], antilinkv2: [], schedule: {}, autojoin: false };
     if (!fs.existsSync(path.dirname(settingsPath))) {
         fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -46,17 +50,15 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         } catch (e) {}
     }
 
-    // --- PROTEKSI COMMAND KHUSUS ADMIN ---
     const adminCommands = [".antilink", ".antilinkv2", ".setopen", ".setclose", ".cektime", ".deltime"];
     
-    if (adminCommands.includes(cmd)) {
+    if (isCommand && adminCommands.includes(cmd)) {
         if (!isGroup) return sock.sendMessage(chatId, { text: "⚠️ Perintah ini khusus digunakan di dalam Grup!" }, { quoted: msg });
         if (!isAuthorized) return sock.sendMessage(chatId, { text: "⚠️ Maaf, perintah ini hanya untuk Admin Grup dan Owner Bot!" }, { quoted: msg });
     }
 
-    // --- 1. FITUR JADWAL GRUP (Buka/Tutup Otomatis) ---
     if ((cmd === ".setopen" || cmd === ".setclose") && isAuthorized) {
-        const time = action; // contoh: 08:00
+        const time = action;
         if (!time || !/^\d{2}:\d{2}$/.test(time)) {
             return sock.sendMessage(chatId, { text: "⚠️ Format waktu salah!\n\nContoh penggunaan:\n👉 *.setopen 08:00*\n👉 *.setclose 22:00*" }, { quoted: msg });
         }
@@ -86,7 +88,6 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         return sock.sendMessage(chatId, { text: "🗑️ Jadwal buka/tutup otomatis grup ini berhasil dihapus!" }, { quoted: msg });
     }
 
-    // --- 2. SETTINGS ANTILINK V1 (Limit 2x Promosi) ---
     if (cmd === ".antilink" && isAuthorized) {
         if (!action) {
             const status = db.antilink.includes(chatId) ? "AKTIF" : "MATI";
@@ -108,7 +109,6 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // --- 3. SETTINGS ANTILINK V2 (Hard Delete) ---
     if (cmd === ".antilinkv2" && isAuthorized) {
         if (!action) {
             const status = db.antilinkv2.includes(chatId) ? "AKTIF" : "MATI";
@@ -130,7 +130,6 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    // --- 4. EKSEKUSI PELANGGARAN ANTILINK ---
     if (isGroup && !isCreator && !isAdmin && !msg.key.fromMe) {
          const containsLink = rawText.includes("chat.whatsapp.com") || rawText.includes("wa.me") || rawText.includes("http");
          
@@ -158,7 +157,6 @@ async function groupFeatures(sock, chatId, text, key, msg) {
          }
     }
 
-    // --- 5. KELUAR GRUP (.out / .leave) KHUSUS OWNER ---
     if ((cmd === ".out" || cmd === ".leave") && isCreator) {
         if (isGroup) {
             try { await sock.chatModify({ delete: true, lastMessages: [{ key: msg.key, messageTimestamp: msg.messageTimestamp }] }, chatId); } catch {}
@@ -213,12 +211,12 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         }
     }
 
-    if (outSession[sender] && isCreator && !text.startsWith(".")) {
+    if (outSession[sender] && isCreator && !isCommand) {
         const input = rawText;
         const isNumberFormat = /^[0-9,\-\s]+$/.test(input);
-        const isCommand = input.toLowerCase() === 'all' || input.toLowerCase() === 'batal' || input.toLowerCase() === 'cancel';
+        const isCmd = input.toLowerCase() === 'all' || input.toLowerCase() === 'batal' || input.toLowerCase() === 'cancel';
         
-        if (!isNumberFormat && !isCommand) return; 
+        if (!isNumberFormat && !isCmd) return; 
 
         if (input.toLowerCase() === "batal" || input.toLowerCase() === "cancel") {
             delete outSession[sender];
@@ -262,7 +260,6 @@ async function groupFeatures(sock, chatId, text, key, msg) {
     }
 }
 
-// Fitur Eksekusi Jadwal Grup (Jalan Setiap Menit)
 export async function runGroupSchedule(sock) {
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Jakarta' });
     
