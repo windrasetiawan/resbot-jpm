@@ -130,16 +130,19 @@ async function groupFeatures(sock, chatId, text, key, msg) {
         }
     }
 
+    // --- BAGIAN EKSEKUSI ANTILINK YANG DIPERBAIKI ---
     if (isGroup && !isCreator && !isAdmin && !msg.key.fromMe) {
          const containsLink = rawText.includes("chat.whatsapp.com") || rawText.includes("wa.me") || rawText.includes("http");
          
          if (containsLink) {
              if (db.antilinkv2 && db.antilinkv2.includes(chatId)) {
-                 await sock.sendMessage(chatId, { delete: key });
-                 return sock.sendMessage(chatId, { text: `⚠️ @${sender.split('@')[0]} JANGAN PROMOSI DISINI, INI GRUP DISKUSI!!!`, mentions: [sender] });
-             }
-
-             if (db.antilink.includes(chatId)) {
+                 try {
+                     await sock.sendMessage(chatId, { delete: key });
+                     return sock.sendMessage(chatId, { text: `⚠️ @${sender.split('@')[0]} JANGAN PROMOSI DISINI, INI GRUP DISKUSI!!!\n\nPesan otomatis dihapus.`, mentions: [sender] });
+                 } catch (err) {
+                     console.log("[Antilink] Gagal tarik pesan. Pastikan bot adalah Admin.");
+                 }
+             } else if (db.antilink && db.antilink.includes(chatId)) {
                  const today = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
                  const userKey = `${chatId}-${sender}`;
 
@@ -150,12 +153,17 @@ async function groupFeatures(sock, chatId, text, key, msg) {
                  promoStore[userKey].count++;
 
                  if (promoStore[userKey].count > 2) {
-                     await sock.sendMessage(chatId, { delete: key });
-                     await sock.sendMessage(chatId, { text: `⚠️ @${sender.split('@')[0]} PROMOSI MAX 2X SEHARI AJA BOS! Pelanggaran telah dihapus otomatis.`, mentions: [sender] });
+                     try {
+                         await sock.sendMessage(chatId, { delete: key });
+                         await sock.sendMessage(chatId, { text: `⚠️ @${sender.split('@')[0]} PROMOSI MAX 2X SEHARI AJA BOS!\nPelanggaran ke-${promoStore[userKey].count} telah dihapus otomatis.`, mentions: [sender] });
+                     } catch (err) {
+                         console.log("[Antilink] Gagal tarik pesan. Pastikan bot adalah Admin.");
+                     }
                  }
              }
          }
     }
+    // --- AKHIR BAGIAN EKSEKUSI ANTILINK ---
 
     if ((cmd === ".out" || cmd === ".leave") && isCreator) {
         if (isGroup) {
