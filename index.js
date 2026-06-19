@@ -116,10 +116,7 @@ async function handleMsg(sock, msg) {
         let db = {};
         try { db = JSON.parse(fs.readFileSync(settingsPath)); } catch {}
 
-        const isBotOwner = isOwner(sender) || msg.key.fromMe;
-        if (db.mode === 'self' && !isBotOwner) return;
-
-        // --- BAGIAN AUTOJOIN YANG DIPERBAIKI ---
+        // --- BAGIAN AUTOJOIN YANG DIPERBAIKI (DIPINDAH KE ATAS) ---
         if (db.autojoin && (text.includes("chat.whatsapp.com/") || text.includes("wa.me/"))) {
             const codeMatch = text.match(/(?:chat\.whatsapp\.com\/(?:invite\/)?|wa\.me\/(?:invite\/)?)([a-zA-Z0-9_-]{15,30})/);
             if (codeMatch && codeMatch[1] && !msg.key.fromMe) {
@@ -128,17 +125,25 @@ async function handleMsg(sock, msg) {
                     await sleep(2000);
                     // Coba join grup secara langsung
                     await sock.groupAcceptInvite(inviteCode);
+                    await sock.sendMessage(chatId, { text: "✅ *Auto Join:* Berhasil masuk ke dalam grup!" }, { quoted: msg });
                 } catch (e) {
                     // Jika grup membutuhkan persetujuan admin (request to join)
                     try {
                         if (sock.groupRequestParticipate) {
                             await sock.groupRequestParticipate(inviteCode);
+                            await sock.sendMessage(chatId, { text: "⏳ *Auto Join:* Permintaan bergabung telah dikirim ke Admin grup." }, { quoted: msg });
                         }
-                    } catch (err) {}
+                    } catch (err) {
+                        await sock.sendMessage(chatId, { text: "❌ *Auto Join Gagal:* Link tidak valid atau bot sudah ada di grup tersebut." }, { quoted: msg });
+                    }
                 }
             }
         }
         // --- AKHIR BAGIAN AUTOJOIN YANG DIPERBAIKI ---
+
+        // FILTER MODE SELF (Sekarang berada di bawah Autojoin)
+        const isBotOwner = isOwner(sender) || msg.key.fromMe;
+        if (db.mode === 'self' && !isBotOwner) return;
 
         if (text.startsWith(".")) {
             await sock.readMessages([msg.key]);
